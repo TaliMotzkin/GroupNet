@@ -137,8 +137,8 @@ class MS_HGNN_oridinary(nn.Module):
         rel_rec = torch.FloatTensor(rel_rec)
         rel_send = torch.FloatTensor(rel_send)
 
-        rel_rec = rel_rec.cuda()
-        rel_send = rel_send.cuda()
+        rel_rec = rel_rec
+        rel_send = rel_send
 
         rel_rec = rel_rec[None,:,:].repeat(batch,1,1)
         rel_send = rel_send[None,:,:].repeat(batch,1,1)
@@ -290,13 +290,13 @@ class MS_HGNN_hyper(nn.Module):
                 group_size = scale
                 all_combs = []
                 for i in range(actor_number):
-                    tensor_a = torch.arange(actor_number).cuda()
+                    tensor_a = torch.arange(actor_number)
                     tensor_a = torch.cat((tensor_a[0:i],tensor_a[i+1:]),dim=0)
                     padding = (1,0,0,0)
                     all_comb = F.pad(torch.combinations(tensor_a,r=group_size-1),padding,value=i)
                     all_combs.append(all_comb[None,:,:])
                 self.all_combs = torch.cat(all_combs,dim=0)
-                self.all_combs = self.all_combs.cuda()
+                self.all_combs = self.all_combs
 
     def make_nmp_mlp(self):
         nmp_mlp = []
@@ -429,7 +429,7 @@ def gumbel_softmax_sample(logits, tau=1, eps=1e-10):
     """
     gumbel_noise = sample_gumbel(logits.size(), eps=eps)
     if logits.is_cuda:
-        gumbel_noise = gumbel_noise.cuda()
+        gumbel_noise = gumbel_noise
     y = logits + Variable(gumbel_noise)
     return my_softmax(y / tau, axis=-1)
 
@@ -459,7 +459,7 @@ def gumbel_softmax(logits, tau=1, hard=False, eps=1e-10):
         # https://discuss.pytorch.org/t/stop-gradients-for-st-gumbel-softmax/530/5
         y_hard = torch.zeros(*shape)
         if y_soft.is_cuda:
-            y_hard = y_hard.cuda()
+            y_hard = y_hard
         y_hard = y_hard.zero_().scatter_(-1, k.view(shape[:-1] + (1,)), 1.0)
         # this cool bit of code achieves two things:
         # - makes the output value exactly one-hot (since we add then
