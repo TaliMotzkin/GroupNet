@@ -36,7 +36,7 @@ def draw_result(future,past,mode='pre'):
     print('drawing...')
     trajs = np.concatenate((past,future), axis = 2)
     batch = trajs.shape[0]
-    for idx in range(50):
+    for idx in range(8):
         plt.clf()
         traj = trajs[idx]
         traj = traj*94/28
@@ -90,9 +90,9 @@ def draw_result(future,past,mode='pre'):
         plt.imshow(court, zorder=0, extent=[Constant.X_MIN, Constant.X_MAX - Constant.DIFF,
                                             Constant.Y_MAX, Constant.Y_MIN],alpha=0.5)
         if mode == 'pre':
-            plt.savefig('vis/nba/'+str(idx)+'pre.png')
+            plt.savefig('vis/fish/'+str(idx)+'pre.png')
         else:
-            plt.savefig('vis/nba/'+str(idx)+'gt.png')
+            plt.savefig('vis/fish/'+str(idx)+'gt.png')
     print('ok')
     return 
 
@@ -103,7 +103,7 @@ def vis_result(test_loader, args):
 
     for data in test_loader:
         future_traj = np.array(data['future_traj']) * args.traj_scale # B,N,T,2
-	past_traj = np.array(data['past_traj']) * args.traj_scale  # B, N, T_past, 2
+        past_traj = np.array(data['past_traj']) * args.traj_scale
 
         with torch.no_grad():
             prediction = model.inference(data)
@@ -113,19 +113,21 @@ def vis_result(test_loader, args):
         actor_num = future_traj.shape[1]
 
         y = np.reshape(future_traj,(batch*actor_num,args.future_length, 2))
-	previous_3D = np.reshape(past_traj, (batch, actor_num, args.past_length, 2))
-
         y = y[None].repeat(20,axis=0)
         error = np.mean(np.linalg.norm(y- prediction,axis=3),axis=2)
         indices = np.argmin(error, axis = 0)
         best_guess = prediction[indices,np.arange(batch*actor_num)]
         best_guess = np.reshape(best_guess, (batch,actor_num, args.future_length, 2))
         gt = np.reshape(future_traj,(batch,actor_num,args.future_length, 2))
-        previous_3D = np.reshape(previous_3D,(batch,actor_num,args.future_length, 2))
+        previous_3D = np.reshape(past_traj, (batch, actor_num, args.past_length, 2))
+
+        # previous_3D = np.reshape(previous_3D,(batch,actor_num,args.future_length, 2))
 
         draw_result(best_guess,previous_3D)
         draw_result(gt,previous_3D,mode='gt')
-    return 
+    return
+
+
 
 def test_model_all(test_loader, args):
     total_num_pred = 0
