@@ -26,7 +26,7 @@ parser.add_argument('--traj_scale', type=int, default=1)
 parser.add_argument('--learn_prior', action='store_true', default=False)
 parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--sample_k', type=int, default=20)
-parser.add_argument('--num_epochs', type=int, default=100)
+parser.add_argument('--num_epochs', type=int, default=10)
 parser.add_argument('--decay_step', type=int, default=10)
 parser.add_argument('--decay_gamma', type=float, default=0.5)
 parser.add_argument('--iternum_print', type=int, default=100)
@@ -38,7 +38,7 @@ parser.add_argument('--hyper_scales', nargs='+', type=int,default=[5,11])
 parser.add_argument('--num_decompose', type=int, default=2)
 parser.add_argument('--min_clip', type=float, default=2.0)
 
-parser.add_argument('--model_save_dir', default='saved_models/nba')
+parser.add_argument('--model_save_dir', default='saved_models/fish')
 parser.add_argument('--model_save_epoch', type=int, default=5)
 
 parser.add_argument('--epoch_continue', type=int, default=0)
@@ -92,7 +92,7 @@ train_loader = DataLoader(
     train_set,
     batch_size=args.batch_size,
     shuffle=True,
-    num_workers=4,
+    num_workers=0,
     collate_fn=seq_collate,
     pin_memory=True)
 
