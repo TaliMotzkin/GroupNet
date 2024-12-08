@@ -405,8 +405,8 @@ class Decoder(nn.Module):
 
         x_hat = torch.zeros_like(x_true)
         batch_size = x_true.size(0)
-        prediction = torch.zeros((batch_size, self.future_length, 2)).cuda()
-        reconstruction = torch.zeros((batch_size, self.past_length, 2)).cuda()
+        prediction = torch.zeros((batch_size, self.future_length, 2))
+        reconstruction = torch.zeros((batch_size, self.past_length, 2))
 
         for i in range(self.num_decompose):
             x_hat, y_hat = self.decompose[i](x_true, x_hat, hidden)
