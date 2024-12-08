@@ -36,9 +36,9 @@ class NBADataset(Dataset):
         self.trajs /= (94/28) # Turn to meters
 
         if training:
-            self.trajs = self.trajs[:32500]
+            self.trajs = self.trajs[:26] #32500
         else:
-            self.trajs = self.trajs[:12500]
+            self.trajs = self.trajs[:10] #12500
 
         self.batch_len = len(self.trajs)
         print(self.batch_len)
