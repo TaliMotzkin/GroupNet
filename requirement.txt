@@ -7,7 +7,6 @@ cachetools==4.2.4
 certifi==2020.6.20
 charset-normalizer==2.0.12
 cycler==0.11.0
-dataclasses==0.8
 decorator==4.4.2
 easydict==1.9
 future==0.18.2
@@ -18,7 +17,7 @@ grpcio==1.44.0
 idna==3.3
 importlib-metadata==4.8.3
 ipdb==0.13.9
-ipython==7.16.3
+ipython>=7.17.0
 ipython-genutils==0.2.0
 jedi==0.17.2
 joblib==1.1.0
@@ -59,10 +58,10 @@ tensorboard-data-server==0.6.1
 tensorboard-plugin-wit==1.8.1
 threadpoolctl==3.1.0
 toml==0.10.2
-torch==1.8.1+cu111
+torch==1.8.1
 torch-tb-profiler==0.4.0
 torchaudio==0.8.1
-torchvision==0.9.1+cu111
+torchvision==0.9.1
 tqdm==4.62.3
 traitlets==4.3.3
 typing_extensions==4.1.1
