@@ -7,7 +7,7 @@ import shutil
 import random
 sys.path.append(os.getcwd())
 import torch
-from data.dataloader_nba import NBADataset, seq_collate
+from data.dataloader_fish import FISHDataset, seq_collate
 from model.GroupNet_nba import GroupNet
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
@@ -19,27 +19,30 @@ class Constant:
     NORMALIZATION_COEF = 7
     PLAYER_CIRCLE_SIZE = 12 / NORMALIZATION_COEF
     INTERVAL = 10
-    DIFF = 6
+    DIFF = 0
     X_MIN = 0
-    X_MAX = 100
+    X_MAX = 1000
     Y_MIN = 0
-    Y_MAX = 50
+    Y_MAX = 1000
     COL_WIDTH = 0.3
     SCALE = 1.65
     FONTSIZE = 6
-    X_CENTER = X_MAX / 2 - DIFF / 1.5 + 0.10
-    Y_CENTER = Y_MAX - DIFF / 1.5 - 0.35
+    # X_CENTER = X_MAX / 2 - DIFF / 1.5 + 0.10
+    X_CENTER = 500
+    # Y_CENTER = Y_MAX - DIFF / 1.5 - 0.35
+    Y_CENTER = 500
     MESSAGE = 'You can rerun the script and choose any event from 0 to '
 
 def draw_result(future,past,mode='pre'):
     # b n t 2
     print('drawing...')
     trajs = np.concatenate((past,future), axis = 2)
+    print("traj",trajs.shape)
     batch = trajs.shape[0]
-    for idx in range(8):
+    for idx in range(10):
         plt.clf()
-        traj = trajs[idx]
-        traj = traj*94/28
+        traj = trajs[idx]#per batch?
+        # traj = traj*94/28
         actor_num = traj.shape[0]
         length = traj.shape[1]
         
@@ -86,7 +89,7 @@ def draw_result(future,past,mode='pre'):
                 else:
                     plt.plot(x, y, color=color,alpha=1,linewidth=2)
 
-        court = plt.imread("datasets/nba/court.png")
+        court = plt.imread("datasets/fish/tank2.png")
         plt.imshow(court, zorder=0, extent=[Constant.X_MIN, Constant.X_MAX - Constant.DIFF,
                                             Constant.Y_MAX, Constant.Y_MIN],alpha=0.5)
         if mode == 'pre':
@@ -105,19 +108,28 @@ def vis_result(test_loader, args):
         future_traj = np.array(data['future_traj']) * args.traj_scale # B,N,T,2
         past_traj = np.array(data['past_traj']) * args.traj_scale
 
+        print("future", len(future_traj))#10
+        print("past", len(past_traj))#10? batch!
+
         with torch.no_grad():
             prediction = model.inference(data)
         prediction = prediction * args.traj_scale
         prediction = np.array(prediction.cpu()) #(BN,20,T,2)
-        batch = future_traj.shape[0]
-        actor_num = future_traj.shape[1]
+        print("pred length", len(prediction))#20
+        batch = future_traj.shape[0]#10
+        print("batch size", batch)
+        actor_num = future_traj.shape[1] #20
+        print("actor num", actor_num)
 
-        y = np.reshape(future_traj,(batch*actor_num,args.future_length, 2))
+        y = np.reshape(future_traj,(batch*actor_num,args.future_length, 2)) #200, 10, 2
         y = y[None].repeat(20,axis=0)
         error = np.mean(np.linalg.norm(y- prediction,axis=3),axis=2)
+        print("error", error.shape)
         indices = np.argmin(error, axis = 0)
         best_guess = prediction[indices,np.arange(batch*actor_num)]
+        print("best_guess_prev", best_guess.shape)
         best_guess = np.reshape(best_guess, (batch,actor_num, args.future_length, 2))
+        print("best_guess", best_guess.shape)
         gt = np.reshape(future_traj,(batch,actor_num,args.future_length, 2))
         previous_3D = np.reshape(past_traj, (batch, actor_num, args.past_length, 2))
 
@@ -244,7 +256,7 @@ if __name__ == '__main__':
     torch.set_grad_enabled(False)
 
 
-    test_dset = NBADataset(
+    test_dset = FISHDataset(
         obs_len=args.past_length,
         pred_len=args.future_length,
         training=False)

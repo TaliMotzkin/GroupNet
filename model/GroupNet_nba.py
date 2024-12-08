@@ -341,7 +341,7 @@ class FutureEncoder(nn.Module):
 
     def forward(self, inputs, batch_size,agent_num,past_feature):
         length = inputs.shape[1]
-        agent_num = 11
+        agent_num = 20 #todo watch for fish number - make dynamic with different datasets?
         tf_in = self.input_fc(inputs).view(batch_size*agent_num, length, self.model_dim)
 
         tf_in_pos = self.pos_encoder(tf_in, num_a=batch_size*agent_num)

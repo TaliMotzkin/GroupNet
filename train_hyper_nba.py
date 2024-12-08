@@ -9,7 +9,7 @@ from torch import optim
 from torch.optim import lr_scheduler
 sys.path.append(os.getcwd())
 from torch.utils.data import DataLoader
-from data.dataloader_nba import NBADataset, seq_collate
+from data.dataloader_fish import FISHDataset, seq_collate
 from model.GroupNet_nba import GroupNet
 import math
 
@@ -83,7 +83,7 @@ optimizer = optim.Adam(model.parameters(), lr=args.lr)
 scheduler = lr_scheduler.StepLR(optimizer, step_size=args.decay_step, gamma=args.decay_gamma)
 
 """ dataloader """
-train_set = NBADataset(
+train_set = FISHDataset(
     obs_len=args.past_length,
     pred_len=args.future_length,
     training=True)
