@@ -103,6 +103,8 @@ def vis_result(test_loader, args):
 
     for data in test_loader:
         future_traj = np.array(data['future_traj']) * args.traj_scale # B,N,T,2
+	past_traj = np.array(data['past_traj']) * args.traj_scale  # B, N, T_past, 2
+
         with torch.no_grad():
             prediction = model.inference(data)
         prediction = prediction * args.traj_scale
@@ -111,6 +113,8 @@ def vis_result(test_loader, args):
         actor_num = future_traj.shape[1]
 
         y = np.reshape(future_traj,(batch*actor_num,args.future_length, 2))
+	previous_3D = np.reshape(past_traj, (batch, actor_num, args.past_length, 2))
+
         y = y[None].repeat(20,axis=0)
         error = np.mean(np.linalg.norm(y- prediction,axis=3),axis=2)
         indices = np.argmin(error, axis = 0)
@@ -220,8 +224,8 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=1)
     parser.add_argument('--model_names', default=None)
     parser.add_argument('--gpu', type=int, default=0)
-    parser.add_argument('--model_save_dir', default='saved_models/nba')
-    parser.add_argument('--vis', action='store_true', default=False)
+    parser.add_argument('--model_save_dir', default='saved_models/fish')
+    parser.add_argument('--vis', action='store_true', default=True)
     parser.add_argument('--traj_scale', type=int, default=1)
     parser.add_argument('--sample_k', type=int, default=20)
     parser.add_argument('--past_length', type=int, default=5)
@@ -247,7 +251,7 @@ if __name__ == '__main__':
         test_dset,
         batch_size=128,
         shuffle=False,
-        num_workers=4,
+        num_workers=0,
         collate_fn=seq_collate,
         pin_memory=True)
 
