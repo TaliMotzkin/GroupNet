@@ -13,7 +13,7 @@ class DecomposeBlock(nn.Module):
     '''
     Balance between reconstruction task and prediction task.
     '''
-    def __init__(self, past_len, future_len, input_dim):
+    def __init__(self, past_len, future_len, input_dim): #10,5,288
         super(DecomposeBlock, self).__init__()
         # * HYPER PARAMETERS
         channel_in = 2
@@ -56,10 +56,15 @@ class DecomposeBlock(nn.Module):
             y_hat: n, T_f, 2
         '''
         x_ = x_true - x_hat
+        # print("x_ in decompose ", x_.shape) #640 ,5, 2,
         x_ = torch.transpose(x_, 1, 2)
-        
+        # print("x_ T in decompose ", x_.shape)#640,2,5
+
         past_embed = self.relu(self.conv_past(x_))
+        # print("past_embed in decompose ", past_embed.shape) #640, 32,5 - depends on chacel out
+
         past_embed = torch.transpose(past_embed, 1, 2)
+        # print("past_embed T in decompose ", past_embed.shape)  # back to 640, 5, 32
 
         _, state_past = self.encoder_past(past_embed)
         state_past = state_past.squeeze(0)
@@ -68,14 +73,15 @@ class DecomposeBlock(nn.Module):
 
         x_hat_after = self.decoder_x(input_feat).contiguous().view(-1, self.past_len, 2)
         y_hat = self.decoder_y(input_feat).contiguous().view(-1, self.future_len, 2)
-        
+        # print("y_hat in decompose ", y_hat.shape) #([640, 10, 2])
+        # print("x_hat_after T in decompose ", x_hat_after.shape) #([640, 5, 2])
         return x_hat_after, y_hat
 
 class Normal:
     def __init__(self, mu=None, logvar=None, params=None):
         super().__init__()
         if params is not None:
-            self.mu, self.logvar = torch.chunk(params, chunks=2, dim=-1)
+            self.mu, self.logvar = torch.chunk(params, chunks=2, dim=-1)#split to two chunks the last dim #640, 32
         else:
             assert mu is not None
             assert logvar is not None
@@ -142,16 +148,16 @@ class PositionalAgentEncoding(nn.Module):
         self.register_buffer('pe', pe)
 
     def build_pos_enc(self, max_len):
-        pe = torch.zeros(max_len, self.d_model)
-        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, self.d_model, 2).float() * (-np.log(10000.0) / self.d_model))
-        pe[:, 0::2] = torch.sin(position * div_term)
+        pe = torch.zeros(max_len, self.d_model)#200X64
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)#vector 200,1-0,1,2,3...
+        div_term = torch.exp(torch.arange(0, self.d_model, 2).float() * (-np.log(10000.0) / self.d_model))#normalize
+        pe[:, 0::2] = torch.sin(position * div_term)#odd and even calcualtion of sin and cps
         pe[:, 1::2] = torch.cos(position * div_term)
-        return pe
+        return pe #200X64
     
     def get_pos_enc(self, num_t, num_a, t_offset):
-        pe = self.pe[t_offset: num_t + t_offset, :]
-        pe = pe[None].repeat(num_a,1,1)
+        pe = self.pe[t_offset: num_t + t_offset, :] #get by size of T
+        pe = pe[None].repeat(num_a,1,1)#for all agents in all batches B*N, T, model
         return pe
 
     def get_agent_enc(self, num_t, num_a, a_offset):
@@ -160,11 +166,11 @@ class PositionalAgentEncoding(nn.Module):
         return ae
 
     def forward(self, x, num_a, t_offset=0):
-        num_t = x.shape[1]
+        num_t = x.shape[1]#time steps #x-> BN, T, 4,| 64  #numa = B*N
         pos_enc = self.get_pos_enc(num_t, num_a, t_offset) #(N,T,D)
         if self.concat:
             feat = [x, pos_enc]
-            x = torch.cat(feat, dim=-1)
+            x = torch.cat(feat, dim=-1) #add pos encoder to the original x
             x = self.fc(x)
         else:
             x += pos_enc
@@ -174,7 +180,7 @@ class PastEncoder(nn.Module):
     def __init__(self, args, in_dim=4):
         super().__init__()
         self.args = args
-        self.model_dim = args.hidden_dim
+        self.model_dim = args.hidden_dim #64
         self.scale_number = len(args.hyper_scales)
             
         self.input_fc = nn.Linear(in_dim, self.model_dim)
@@ -198,7 +204,7 @@ class PastEncoder(nn.Module):
                 bottleneck_dim=self.model_dim,
                 batch_norm=0,
                 nmp_layers=1,
-                scale=args.hyper_scales[0]
+                scale=args.hyper_scales[0] # 5
             )
         if len(args.hyper_scales) > 1:
             self.interaction_hyper2 = MS_HGNN_hyper(
@@ -208,7 +214,7 @@ class PastEncoder(nn.Module):
                 bottleneck_dim=self.model_dim,
                 batch_norm=0,
                 nmp_layers=1,
-                scale=args.hyper_scales[1]
+                scale=args.hyper_scales[1]# 11
             )
 
         if len(args.hyper_scales) > 2:
@@ -237,34 +243,45 @@ class PastEncoder(nn.Module):
 
     def forward(self, inputs,batch_size, agent_num):
         length = inputs.shape[1]
+        # print("past encoder: ", inputs.shape)
+        tf_in = self.input_fc(inputs).view(batch_size*agent_num, length, self.model_dim) #BN, T,  64
+        # print("past encoder tf_in: ", tf_in.shape)
 
-        tf_in = self.input_fc(inputs).view(batch_size*agent_num, length, self.model_dim)
-
-        tf_in_pos = self.pos_encoder(tf_in, num_a=batch_size*agent_num)
+        tf_in_pos = self.pos_encoder(tf_in, num_a=batch_size*agent_num) #NB, T, D
         tf_in_pos = tf_in_pos.view(batch_size, agent_num, length, self.model_dim)
-  
-        ftraj_input = self.input_fc2(tf_in_pos.contiguous().view(batch_size, agent_num, length*self.model_dim))
-        ftraj_input = self.input_fc3(self.add_category(ftraj_input))
+        # print("past encoder tf_in_pos: ", tf_in_pos.shape) # 32, 20, 5, 64
+
+        ftraj_input = self.input_fc2(tf_in_pos.contiguous().view(batch_size, agent_num, length*self.model_dim))#B, N, 64*T
+        # print("past encoder ftraj_input1: ", ftraj_input.shape) #32., 20, 64
+        ftraj_input = self.input_fc3(self.add_category(ftraj_input))#adding meaning of ball and differnt players, now all set to 1
+
+        # print("past encoder ftraj_input: ", ftraj_input.shape) #32., 20, 64
+
         query_input = F.normalize(ftraj_input,p=2,dim=2)
-        feat_corr = torch.matmul(query_input,query_input.permute(0,2,1))
-        ftraj_inter,_ = self.interaction(ftraj_input)
+        feat_corr = torch.matmul(query_input,query_input.permute(0,2,1)) #[B, N, N] #todo understand this meaning of permute?
+
+        # print("past encoder feat_corr: ", feat_corr.shape)
+
+        ftraj_inter,_ = self.interaction(ftraj_input)#([32, 20, 64]
+
         if len(self.args.hyper_scales) > 0:
-            ftraj_inter_hyper,_ = self.interaction_hyper(ftraj_input,feat_corr)
+            ftraj_inter_hyper,_ = self.interaction_hyper(ftraj_input,feat_corr)#([32, 20, 64]
         if len(self.args.hyper_scales) > 1:
-            ftraj_inter_hyper2,_ = self.interaction_hyper2(ftraj_input,feat_corr)
+            ftraj_inter_hyper2,_ = self.interaction_hyper2(ftraj_input,feat_corr)#([32, 20, 64]
         if len(self.args.hyper_scales) > 2:
             ftraj_inter_hyper3,_ = self.interaction_hyper3(ftraj_input,feat_corr)
 
         if len(self.args.hyper_scales) == 0:
-            final_feature = torch.cat((ftraj_input,ftraj_inter),dim=-1)
+            final_feature = torch.cat((ftraj_input,ftraj_inter),dim=-1)#([32, 20, 64]
         if len(self.args.hyper_scales) == 1:
-            final_feature = torch.cat((ftraj_input,ftraj_inter,ftraj_inter_hyper),dim=-1)
+            final_feature = torch.cat((ftraj_input,ftraj_inter,ftraj_inter_hyper),dim=-1)#([32, 20, 64]
         elif len(self.args.hyper_scales) == 2:
             final_feature = torch.cat((ftraj_input,ftraj_inter,ftraj_inter_hyper,ftraj_inter_hyper2),dim=-1)
         elif len(self.args.hyper_scales) == 3:
             final_feature = torch.cat((ftraj_input,ftraj_inter,ftraj_inter_hyper,ftraj_inter_hyper2,ftraj_inter_hyper3),dim=-1)
 
-        output_feature = final_feature.view(batch_size*agent_num,-1)
+        output_feature = final_feature.view(batch_size*agent_num,-1) #32*20, 64*4
+        # print("after concutinationg all in encoder past ", output_feature.shape)
         return output_feature
 
 class FutureEncoder(nn.Module):
@@ -324,7 +341,7 @@ class FutureEncoder(nn.Module):
 
         self.pos_encoder = PositionalAgentEncoding(self.model_dim, 0.1, concat=True)
 
-        self.out_mlp = MLP2(scale_num*2*self.model_dim, [128], 'relu')
+        self.out_mlp = MLP2(scale_num*2*self.model_dim, [128], 'relu')#4*2*64 = 512
         self.qz_layer = nn.Linear(self.out_mlp.out_dim, 2 * self.args.zdim)
         initialize_weights(self.qz_layer.modules())
 
@@ -346,13 +363,15 @@ class FutureEncoder(nn.Module):
 
         tf_in_pos = self.pos_encoder(tf_in, num_a=batch_size*agent_num)
         tf_in_pos = tf_in_pos.view(batch_size, agent_num, length, self.model_dim)
+        # print("future encoder tf_in_pos ", tf_in_pos.shape) #([32, 20, 10, 64])
 
         ftraj_input = self.input_fc2(tf_in_pos.contiguous().view(batch_size, agent_num, -1))
+        # print("future encoder ftraj_input ", ftraj_input.shape)#([32, 20, 64])
+
         ftraj_input = self.input_fc3(self.add_category(ftraj_input))
         query_input = F.normalize(ftraj_input,p=2,dim=2)
         feat_corr = torch.matmul(query_input,query_input.permute(0,2,1))
         ftraj_inter,_ = self.interaction(ftraj_input)
-
         if len(self.args.hyper_scales) > 0:
             ftraj_inter_hyper,_ = self.interaction_hyper(ftraj_input,feat_corr)
         if len(self.args.hyper_scales) > 1:
@@ -371,10 +390,17 @@ class FutureEncoder(nn.Module):
 
 
         final_feature = final_feature.view(batch_size*agent_num,-1)
+        # print("final_feature future encoder ", final_feature.shape) #torch.Size([640, 256]) like in the past
 
         h = torch.cat((past_feature,final_feature),dim=-1)
+
+        # print("h in future encoder ", h.shape)#640, 256*2
         h = self.out_mlp(h)
+        # print("h in future encoder after mlp2 ", h.shape)#640, 128
+
         q_z_params = self.qz_layer(h)
+
+        # print("q_z_params in future encoder after some linear ", q_z_params.shape)#640, 64
         return q_z_params
 
 class Decoder(nn.Module):
@@ -386,35 +412,48 @@ class Decoder(nn.Module):
         scale_num = 2 + len(self.args.hyper_scales)
         
         self.num_decompose = args.num_decompose
-        input_dim = scale_num*self.model_dim+self.args.zdim
+        input_dim = scale_num*self.model_dim+self.args.zdim # =4*64 + 32 =288 -> 256 of past and 32 of future
         self.past_length = self.args.past_length
         self.future_length = self.args.future_length
 
         self.decompose = nn.ModuleList([DecomposeBlock(self.args.past_length, self.args.future_length, input_dim) for _ in range(self.num_decompose)])
 
+    # sending past features:32*20, 64*4,
+    # qz_sampled mu and sigam shapes: 640, 32, batch 32,  agents 20, past traj: 640,5,2, current location, 640,1,2
     def forward(self, past_feature, z, batch_size_curr, agent_num_perscene, past_traj, cur_location, sample_num, mode='train'):
-        agent_num = batch_size_curr * agent_num_perscene
-        past_traj_repeat = past_traj.repeat_interleave(sample_num, dim=0)
-        past_feature = past_feature.view(-1,sample_num,past_feature.shape[-1])
+        agent_num = batch_size_curr * agent_num_perscene #640
+        past_traj_repeat = past_traj.repeat_interleave(sample_num, dim=0) #After repeat_interleave(sample_num=4, dim=0): Shape becomes (640 * 4, 5, 2) = (2560, 5, 2)
+        past_feature = past_feature.view(-1,sample_num,past_feature.shape[-1]) #If past_feature is (2560, 64) (from 640 agents × 4 samples):After reshaping: (640, 4, 64).
+
+        # print("past_traj_repeat decoder ", past_traj_repeat.shape) #640, 5, 2
+        # print("past_feature decoder ", past_feature.shape) #640,1, 256,
 
         z_in = z.view(-1, sample_num, z.shape[-1])
 
+        # print("z_in decoder ", z_in.shape) #640,1,32
+
         hidden = torch.cat((past_feature,z_in),dim=-1)
+        # print("hidden decoder", hidden.shape) #640, 1, 256+32=288
         hidden = hidden.view(agent_num*sample_num,-1)
+        # print("hidden decoder after view, ", hidden.shape) #640, 288
         x_true = past_traj_repeat.clone() #torch.transpose(pre_motion_scene_norm, 0, 1)
 
         x_hat = torch.zeros_like(x_true)
         batch_size = x_true.size(0)
+
+        # print("x_true", x_true.shape,  " batch_size ", batch_size) #640,5,2  batch =640..
         prediction = torch.zeros((batch_size, self.future_length, 2))
         reconstruction = torch.zeros((batch_size, self.past_length, 2))
 
-        for i in range(self.num_decompose):
+        for i in range(self.num_decompose): #numdecompose = 2
             x_hat, y_hat = self.decompose[i](x_true, x_hat, hidden)
             prediction += y_hat
             reconstruction += x_hat
         norm_seq = prediction.view(agent_num*sample_num,self.future_length,2)
         recover_pre_seq = reconstruction.view(agent_num*sample_num,self.past_length,2)
 
+        # print("norm_seq decoder ", norm_seq.shape) #if samples are =20 -> 640*20 = 12800
+        # print("recover_pre_seq decoder ", recover_pre_seq.shape)
         # norm_seq = norm_seq.permute(2,0,1,3).view(self.future_length, agent_num * sample_num,2)
 
         cur_location_repeat = cur_location.repeat_interleave(sample_num, dim=0)
@@ -429,11 +468,12 @@ class GroupNet(nn.Module):
 
         self.device = device
         self.args = args
+        # print("args", self.args)
 
         # models
-        scale_num = 2 + len(self.args.hyper_scales)
+        scale_num = 2 + len(self.args.hyper_scales)#[5,11]=4
         self.past_encoder = PastEncoder(args)
-        self.pz_layer = nn.Linear(scale_num*self.args.hidden_dim, 2 * self.args.zdim)
+        self.pz_layer = nn.Linear(scale_num*self.args.hidden_dim, 2 * self.args.zdim) #4*64, 2*32
         if args.learn_prior:
             initialize_weights(self.pz_layer.modules())
         self.future_encoder = FutureEncoder(args)
@@ -477,28 +517,32 @@ class GroupNet(nn.Module):
         past_traj = data['past_traj'].view(batch_size*agent_num,self.args.past_length,2).to(device).contiguous()
         future_traj = data['future_traj'].view(batch_size*agent_num,self.args.future_length,2).to(device).contiguous()
 
-        past_vel = past_traj[:,1:] - past_traj[:,:-1, :]
+        # print("past_traj ", past_traj.shape) #640,5,2
+        past_vel = past_traj[:,1:] - past_traj[:,:-1, :] #calcuates velocity and then padding to match the seq length
         past_vel = torch.cat([past_vel[:,[0]], past_vel], dim=1)
 
         future_vel = future_traj - torch.cat([past_traj[:,[-1]], future_traj[:,:-1, :]],dim=1)
-        cur_location = past_traj[:,[-1]]
+        cur_location = past_traj[:,[-1]] #last agents locations
 
-        inputs = torch.cat((past_traj,past_vel),dim=-1)
-        inputs_for_posterior = torch.cat((future_traj,future_vel),dim=-1)
+        # print("cur_location ", cur_location.shape) #640,1,2
+        inputs = torch.cat((past_traj,past_vel),dim=-1) #[x,y, xv,yv]
+        # print("velocity and xy size", inputs.shape) #32*20, T=5, VXY =4
+        inputs_for_posterior = torch.cat((future_traj,future_vel),dim=-1)#32*20, T=10, VXY =4
 
-        past_feature = self.past_encoder(inputs,batch_size,agent_num)
-        qz_param = self.future_encoder(inputs_for_posterior,batch_size,agent_num,past_feature)
+        # print("inputs_for_posterior, ", inputs_for_posterior.shape)
+        past_feature = self.past_encoder(inputs,batch_size,agent_num)#32*20, 64*4
+        qz_param = self.future_encoder(inputs_for_posterior,batch_size,agent_num,past_feature) #32*20, 64
 
-        ### q dist ###
+        ### q dist ### of future and past
         if self.args.ztype == 'gaussian':
             qz_distribution = Normal(params=qz_param)
         else:
             ValueError('Unknown hidden distribution!')
         qz_sampled = qz_distribution.rsample()
-
-        ### p dist ###
+        # print("qz_sampled mu and sigma ,", qz_sampled.shape)
+        ### p dist ### only of past
         if self.args.learn_prior:
-            pz_param = self.pz_layer(past_feature)
+            pz_param = self.pz_layer(past_feature) #send to linear the past embeding
             if self.args.ztype == 'gaussian':
                 pz_distribution = Normal(params=pz_param)
             else:
@@ -513,11 +557,15 @@ class GroupNet(nn.Module):
 
         ### use q ###
         # z = qz_sampled
-        pred_traj,recover_traj = self.decoder(past_feature,qz_sampled,batch_size,agent_num,past_traj,cur_location,sample_num=1)
-        loss_pred = self.calculate_loss_pred(pred_traj,future_traj,batch_size)
+        pred_traj,recover_traj = self.decoder(past_feature,qz_sampled,batch_size,agent_num,past_traj,cur_location,sample_num=1)#sending past features:32*20, 64*4,
+        #qz_sampled mu and sigam shapes: 640, 32, batch 32,  agents 20, past traj: 640,5,2, current location, 640,1,2
 
-        loss_recover = self.calculate_loss_recover(recover_traj,past_traj,batch_size)
-        loss_kl = self.calculate_loss_kl(qz_distribution,pz_distribution,batch_size,agent_num,self.args.min_clip)
+        # print("pred_traj main ", pred_traj.shape) #640,10,2
+
+        loss_pred = self.calculate_loss_pred(pred_traj,future_traj,batch_size) #future loss
+
+        loss_recover = self.calculate_loss_recover(recover_traj,past_traj,batch_size) #past loss
+        loss_kl = self.calculate_loss_kl(qz_distribution,pz_distribution,batch_size,agent_num,self.args.min_clip) #calcualte KL divergance
         
 
         ### p dist for best 20 loss ###
@@ -541,6 +589,8 @@ class GroupNet(nn.Module):
         # z = pz_sampled
 
         diverse_pred_traj,_ = self.decoder(past_feature_repeat,pz_sampled,batch_size,agent_num,past_traj,cur_location,sample_num=20,mode='inference')
+
+        # print("diverse_pred_traj main ", diverse_pred_traj.shape) #640,20,10,2
         loss_diverse = self.calculate_loss_diverse(diverse_pred_traj,future_traj,batch_size)
         total_loss = loss_pred + loss_recover + loss_kl+ loss_diverse
 
