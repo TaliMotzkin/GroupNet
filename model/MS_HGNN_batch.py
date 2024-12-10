@@ -39,12 +39,17 @@ class MLP_dict_softmax(nn.Module):
         self.init_MLP = MLP(input_dim = input_dim, output_dim = input_dim, hidden_size=hidden_size)
 
     def forward(self, x):
+        # print("MLP dict softmax x before MLP dist ", x.shape)
         x = self.init_MLP(x)
+        # print("MLP dict softmax x after MLP dist ", self.MLP_distribution(x).shape)
         distribution = gumbel_softmax(self.MLP_distribution(x),tau=1/2, hard=False)
         # embed = self.dict_layer(distribution)
         factor = torch.sigmoid(self.MLP_factor(x))
+        # print("factor size ", factor.shape) #32, 400, 1
         # factor = 1
         out = factor * distribution
+        # print("out size ", out.shape)
+        # print("distribution size ", distribution.shape) #both 32, 400, 6
         return out, distribution
 
 class MS_HGNN_oridinary(nn.Module):
@@ -66,7 +71,7 @@ class MS_HGNN_oridinary(nn.Module):
 
         hdim_extend = 64
         self.hdim_extend = hdim_extend
-        self.edge_types = 6
+        self.edge_types = 6 #todo make sure if i want to keep it 6 as it represents the factor number - some features related to the 400 edges?..
         self.nmp_mlp_start = MLP_dict_softmax(input_dim = hdim_extend, output_dim = h_dim, hidden_size=(128,),edge_types=self.edge_types)
         self.nmp_mlps = self.make_nmp_mlp()
         self.nmp_mlp_end = MLP(input_dim = h_dim*2, output_dim = bottleneck_dim, hidden_size=(128,))
@@ -87,7 +92,9 @@ class MS_HGNN_oridinary(nn.Module):
         nmp_mlp = []
         for i in range(self.nmp_layers-1):
             mlp1 = MLP(input_dim = self.h_dim*2, output_dim = self.h_dim, hidden_size=(128,))
+            # print("make nmp mlp1 layer, " , mlp1.shape)
             mlp2 = MLP_dict_softmax(input_dim = self.hdim_extend, output_dim = self.h_dim, hidden_size=(128,),edge_types=self.edge_types)
+            # print("make nmp mlp layer after dict softmax mlp2, ", mlp2.shape)
             nmp_mlp.append(mlp1)
             nmp_mlp.append(mlp2)
         nmp_mlp = nn.ModuleList(nmp_mlp)
@@ -112,11 +119,13 @@ class MS_HGNN_oridinary(nn.Module):
         incoming = self.edge_aggregation_list[idx](x,H,ori)
         return incoming / incoming.size(1)
 
-    def node2edge(self, x, rel_rec, rel_send, idx):
+    def node2edge(self, x, rel_rec, rel_send, idx): #x= B, N, T=64
         # NOTE: Assumes that we have the same graph across all samples.
-        H = rel_rec + rel_send
-        x = self.node2edge_start_mlp[idx](x)
-        edge_init = torch.matmul(H,x)
+        H = rel_rec + rel_send #NXN
+        x = self.node2edge_start_mlp[idx](x) #chooses batch on which to run x?
+        # print("node2edge from HGNN original x ",x.shape)
+        edge_init = torch.matmul(H,x) # B, 400, T=64
+        # print("node2edge from HGNN original edge_init ", edge_init.shape)
         node_num = x.shape[1]
         edge_num = edge_init.shape[1]
         x_rep = (x[:,:,None,:].transpose(2,1)).repeat(1,edge_num,1,1)
@@ -127,15 +136,18 @@ class MS_HGNN_oridinary(nn.Module):
         H_weight = F.softmax(H_weight,dim=2)
         H_weight = H_weight * H
         edges = torch.matmul(H_weight,x)
-        return edges
+        # print("node2edge from HGNN original edge final ", edges.shape)
+
+        return edges # B, 400, T=64
 
     def init_adj(self, num_ped, batch):
-        off_diag = np.ones([num_ped, num_ped])
-
+        off_diag = np.ones([num_ped, num_ped]) #20X20
         rel_rec = np.array(encode_onehot(np.where(off_diag)[1]), dtype=np.float64)
-        rel_send = np.array(encode_onehot(np.where(off_diag)[0]), dtype=np.float64)
+        rel_send = np.array(encode_onehot(np.where(off_diag)[0]), dtype=np.float64) #400X20
+        # print("off diag", rel_send.shape)
         rel_rec = torch.FloatTensor(rel_rec)
         rel_send = torch.FloatTensor(rel_send)
+
 
         rel_rec = rel_rec
         rel_send = rel_send
@@ -143,33 +155,44 @@ class MS_HGNN_oridinary(nn.Module):
         rel_rec = rel_rec[None,:,:].repeat(batch,1,1)
         rel_send = rel_send[None,:,:].repeat(batch,1,1)
 
-        return rel_rec, rel_send
+        return rel_rec, rel_send #fully communicative - creates an encoding for that..
 
-    def forward(self, h_states):
+    def forward(self, h_states):#B, N, T=64
         batch = h_states.shape[0]
         actor_num = h_states.shape[1]
 
         curr_hidden = h_states
+        # print("HGNN forward h_states: ", curr_hidden.shape) #32, 20, 64
 
         # Neural Message Passing
-        rel_rec, rel_send = self.init_adj(actor_num,batch)
+        rel_rec, rel_send = self.init_adj(actor_num,batch) #([32, 400, 20])
+        # print("HGNN forward rel_rec: ", rel_rec.shape)
+
         # iter 1
         edge_feat = self.node2edge(curr_hidden, rel_rec, rel_send,0) # [num_edge, h_dim*2]
+
+        # print("HGNN edge feat: ", edge_feat.shape) #[32, 400, 64]
         # edge_feat = torch.cat([edge_feat, curr_rel_embedding], dim=2)    # [num_edge, h_dim*2+embedding_dim]
-        edge_feat, factors = self.nmp_mlp_start(edge_feat)                      # [num_edge, h_dim]
+        edge_feat, factors = self.nmp_mlp_start(edge_feat)                      # [num_edge, h_dim] -> ([32, 400, 6]
+
+        # print("edge_feat HGNN ordinal ", edge_feat.shape)
+        # print("factors HGNN ordinal ", factors.shape)
+
         node_feat = curr_hidden
 
         nodetoedge_idx = 0
         if self.nmp_layers <= 1:
             pass
         else:
-            for nmp_l, nmp_mlp in enumerate(self.nmp_mlps):
+            for nmp_l, nmp_mlp in enumerate(self.nmp_mlps): #how many times to do edgeto node and viseverca
                 if nmp_l%2==0:
                     node_feat = nmp_mlp(self.edge2node(edge_feat, rel_rec, rel_send,node_feat,nodetoedge_idx)) # [num_ped, h_dim]
                     nodetoedge_idx += 1
                 else:    
                     edge_feat, _ = nmp_mlp(self.node2edge(node_feat, rel_rec, rel_send,nodetoedge_idx)) # [num_ped, h_dim] -> [num_edge, 2*h_dim] -> [num_edge, h_dim]
         node_feat = self.nmp_mlp_end(self.edge2node(edge_feat, rel_rec, rel_send, node_feat,nodetoedge_idx))
+        # print("node feat final in MS_HGNN_oridinary ", node_feat.shape)#([32, 20, 64]
+        # print("factors final in MS_HGNN_oridinary ", factors.shape)#> ([32, 400, 6]
         return node_feat, factors
 
 
@@ -266,7 +289,7 @@ class MS_HGNN_hyper(nn.Module):
         self.spatial_transform = nn.Linear(h_dim,h_dim)
         hdim_extend = 64
         self.hdim_extend = hdim_extend
-        self.edge_types = 10
+        self.edge_types = 10 #todo make sure we want this size
 
         self.nmp_mlp_start = MLP_dict_softmax(input_dim=hdim_extend, output_dim=h_dim, hidden_size=(128,),edge_types=self.edge_types)
         self.nmp_mlps = self.make_nmp_mlp()
@@ -289,14 +312,15 @@ class MS_HGNN_hyper(nn.Module):
             if scale < actor_number:
                 group_size = scale
                 all_combs = []
-                for i in range(actor_number):
-                    tensor_a = torch.arange(actor_number)
-                    tensor_a = torch.cat((tensor_a[0:i],tensor_a[i+1:]),dim=0)
+                for i in range(actor_number): #or each actor i, generate all possible combinations of group_size - 1 other actors, excluding actor i
+                    tensor_a = torch.arange(actor_number) #[0,1,2...19]
+                    tensor_a = torch.cat((tensor_a[0:i],tensor_a[i+1:]),dim=0) #all indx except of i's
                     padding = (1,0,0,0)
-                    all_comb = F.pad(torch.combinations(tensor_a,r=group_size-1),padding,value=i)
-                    all_combs.append(all_comb[None,:,:])
+                    all_comb = F.pad(torch.combinations(tensor_a,r=group_size-1),padding,value=i) #generate all combinations of group sized, if 3 -> [1,2,4]....
+                    all_combs.append(all_comb[None,:,:])#A tensor of shape (C, group_size) containing all combinations of group_size actors, including actor i
                 self.all_combs = torch.cat(all_combs,dim=0)
                 self.all_combs = self.all_combs
+                # print("all_combs.shape",self.all_combs.shape)
 
     def make_nmp_mlp(self):
         nmp_mlp = []
@@ -345,21 +369,23 @@ class MS_HGNN_hyper(nn.Module):
         batch = feat.shape[0]
         actor_number = feat.shape[1]
         if scale_factor == actor_number:
-            H_matrix = torch.ones(batch,1,actor_number).type_as(feat)
+            H_matrix = torch.ones(batch,1,actor_number).type_as(feat)# return fully connected relationships
             return H_matrix
-        group_size = scale_factor
+        group_size = scale_factor #5
         if group_size < 1:
             group_size = 1
 
-        _,indice = torch.topk(feat_corr,dim=2,k=group_size,largest=True)
+        _,indice = torch.topk(feat_corr,dim=2,k=group_size,largest=True) #For each actor, select the top group_size neighbors based on correlation.
+        #indice A tensor of shape (batch_size, actor_number, group_size) containing indices of the top correlated actors.
         H_matrix = torch.zeros(batch,actor_number,actor_number).type_as(feat)
-        H_matrix = H_matrix.scatter(2,indice,1)
-
+        H_matrix = H_matrix.scatter(2,indice,1) #dim 2 scatter along the last dim - actor to actor connections, set  1 where there is a connections
+        # print("indice",indice.shape) #32, 20, 5
+        # print("H_matrix",H_matrix.shape) #32, 20, 20
         return H_matrix
 
     def init_adj_attention_listall(self, feat,feat_corr, scale_factor=2):
-        batch = feat.shape[0]
-        actor_number = feat.shape[1]
+        batch = feat.shape[0] #32
+        actor_number = feat.shape[1]#20
         if scale_factor == actor_number:
             H_matrix = torch.ones(batch,1,actor_number).type_as(feat)
             return H_matrix
@@ -367,31 +393,36 @@ class MS_HGNN_hyper(nn.Module):
         if group_size < 1:
             group_size = 1
 
-        all_indice = self.all_combs.clone() #(N,C,m)
+        #Builds an adjacency matrix based on all combinations of actor correlations.
+        all_indice = self.all_combs.clone() #(N,C,m) (actor_number, C, group_size)
         all_indice = all_indice[None,:,:,:].repeat(batch,1,1,1)
         all_matrix = feat_corr[:,None,None,:,:].repeat(1,actor_number,all_indice.shape[2],1,1)
         all_matrix = torch.gather(all_matrix,3,all_indice[:,:,:,:,None].repeat(1,1,1,1,actor_number))
         all_matrix = torch.gather(all_matrix,4,all_indice[:,:,:,None,:].repeat(1,1,1,group_size,1))
         score = torch.sum(all_matrix,dim=(3,4),keepdim=False)
-        _,max_idx = torch.max(score,dim=2)
+        _,max_idx = torch.max(score,dim=2)#coses the best combination!
         indice = torch.gather(all_indice,2,max_idx[:,:,None,None].repeat(1,1,1,group_size))[:,:,0,:]
 
         H_matrix = torch.zeros(batch,actor_number,actor_number).type_as(feat)
         H_matrix = H_matrix.scatter(2,indice,1)
+        # print("H_matrix tall ", H_matrix.shape) #32, 20, 20
 
         return H_matrix
 
 
     def forward(self, h_states, corr):
-        curr_hidden = h_states #(num_pred, h_dim)
+        curr_hidden = h_states #(num_pred, h_dim) #32, 20, 64, #cor = 32, 20, 20
 
         if self.listall:
             H = self.init_adj_attention_listall(curr_hidden,corr,scale_factor=self.scale)
         else:
             H = self.init_adj_attention(curr_hidden,corr,scale_factor=self.scale)
 
-        edge_hidden = self.node2edge(curr_hidden, H, idx=0) 
-        edge_feat, factor = self.nmp_mlp_start(edge_hidden)                      
+        edge_hidden = self.node2edge(curr_hidden, H, idx=0)
+        # print("edge_hidden ", edge_hidden.shape) #e([32, 20, 64])
+        edge_feat, factor = self.nmp_mlp_start(edge_hidden)
+        # print("edge_feat ", edge_feat.shape) #([32, 20, 10])
+        # print("factor ", factor.shape )#([32, 20, 10])
         node_feat = curr_hidden
         node2edge_idx = 0
         if self.nmp_layers <= 1:
@@ -404,6 +435,7 @@ class MS_HGNN_hyper(nn.Module):
                 else:    
                     edge_feat, _ = nmp_mlp(self.node2edge(node_feat, H, idx=node2edge_idx)) 
         node_feat = self.nmp_mlp_end(self.edge2node(edge_feat,node_feat, H,node2edge_idx))
+        # print("node feat ", node_feat.shape)
         return node_feat, factor
 
 
@@ -428,6 +460,7 @@ def gumbel_softmax_sample(logits, tau=1, eps=1e-10):
     (MIT license)
     """
     gumbel_noise = sample_gumbel(logits.size(), eps=eps)
+    # print("gumble noise , ", gumbel_noise.shape) #32,400,6
     if logits.is_cuda:
         gumbel_noise = gumbel_noise
     y = logits + Variable(gumbel_noise)
@@ -451,7 +484,9 @@ def gumbel_softmax(logits, tau=1, hard=False, eps=1e-10):
     https://github.com/ericjang/gumbel-softmax/blob/3c8584924603869e90ca74ac20a6a03d99a91ef9/Categorical%20VAE.ipynb ,
     (MIT license)
     """
+    # print("logits for softmax ", logits.shape) #32,400,6
     y_soft = gumbel_softmax_sample(logits, tau=tau, eps=eps)
+    # print("y_soft after gumbe " ,y_soft.shape)
     if hard:
         shape = logits.size()
         _, k = y_soft.data.max(-1)
