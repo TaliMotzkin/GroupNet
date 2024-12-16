@@ -58,3 +58,50 @@ class FISHDataset(Dataset):
         future_traj = self.traj_abs[index, :, self.obs_len:, :]
         out = [past_traj, future_traj]
         return out
+
+
+#@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+
+
+
+
+class FISHDataset2(Dataset):
+    """Dataloder for the Trajectory datasets"""
+    def __init__(
+        self, training=True
+    ):
+        super(FISHDataset2, self).__init__()
+
+
+        if training:
+            data_root = 'datasets/fish/fish/train2.npy'
+        else:
+            data_root = 'datasets/fish/fish/test2.npy'
+
+        self.trajs = np.load(data_root)
+
+        if training:
+            self.trajs = self.trajs #2535
+        else:
+            self.trajs = self.trajs #1365
+
+        self.batch_len = len(self.trajs)
+        print("length of data: ", self.batch_len)
+
+        self.traj_abs = torch.from_numpy(self.trajs).type(torch.float)
+
+        self.traj_abs = self.traj_abs.permute(0,2,1,3) #number of traj, number of fish, number of time frames, xy coords
+        # print(self.traj_abs.shape)
+
+    def __len__(self):
+        return self.batch_len
+
+    def agents_num(self):
+        return self.traj_abs.shape[1]
+
+    def __getitem__(self, index):
+        # print(self.traj_abs.shape)
+        out = self.traj_abs[index, :, :, :]
+
+        return out

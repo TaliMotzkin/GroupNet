@@ -184,7 +184,7 @@ class MS_HGNN_oridinary(nn.Module):
         if self.nmp_layers <= 1:
             pass
         else:
-            for nmp_l, nmp_mlp in enumerate(self.nmp_mlps): #how many times to do edgeto node and viseverca
+            for nmp_l, nmp_mlp in enumerate(self.nmp_mlps): #how many times to do edgeto node and vise verca
                 if nmp_l%2==0:
                     node_feat = nmp_mlp(self.edge2node(edge_feat, rel_rec, rel_send,node_feat,nodetoedge_idx)) # [num_ped, h_dim]
                     nodetoedge_idx += 1

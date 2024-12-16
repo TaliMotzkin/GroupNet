@@ -446,7 +446,7 @@ class Decoder(nn.Module):
         reconstruction = torch.zeros((batch_size, self.past_length, 2))
 
         for i in range(self.num_decompose): #numdecompose = 2
-            x_hat, y_hat = self.decompose[i](x_true, x_hat, hidden)
+            x_hat, y_hat = self.decompose[i](x_true, x_hat, hidden) #recurrent - here it uses GRUs
             prediction += y_hat
             reconstruction += x_hat
         norm_seq = prediction.view(agent_num*sample_num,self.future_length,2)
