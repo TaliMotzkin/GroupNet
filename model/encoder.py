@@ -5,9 +5,9 @@ import numpy as np
 import itertools
 import networkx as nx
 import torch.nn as nn
-import torch.nn.functional as F
+import torch.nn.functional as Func
 from torch.autograd import Variable
-# from utils.utils import gumbel_softmax, custom_softmax, sample_core
+from utilities.utils import gumbel_softmax
 # import torch_geometric
 # import torch_geometric.nn as geom_nn
 #
@@ -18,11 +18,206 @@ from torch.autograd import Variable
 #     "GraphConv": geom_nn.GraphConv
 # }
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
-import torch
+class RelationTypeInference(nn.Module):
+    def __init__(self, edge_input_dim, hyperedge_input_dim, num_edge_types, num_hyperedge_types, tau=1.0):
+        """
+        Module to infer edge and hyperedge types then using the Gumbel-Softmax trick.
+
+        Args:
+            edge_input_dim: Dimension of edge feature embeddings e_CG^2.
+            hyperedge_input_dim: Dimension of hyperedge feature embeddings e_HG^2.
+            num_edge_types: Number of possible edge types (L_CG).
+            num_hyperedge_types: Number of possible hyperedge types (L_HG).
+            tau: Gumbel-Softmax temperature parameter.
+        """
+        super(RelationTypeInference, self).__init__()
+        self.tau = tau
+
+        # MLPs for edge logits
+        self.edge_mlp = nn.Sequential(
+            nn.Linear(edge_input_dim, edge_input_dim),
+            nn.ReLU(),
+            nn.Linear(edge_input_dim, num_edge_types)  # Output logits for edge types
+        )
+
+        # MLPs for hyperedge logits
+        self.hyperedge_mlp = nn.Sequential(
+            nn.Linear(hyperedge_input_dim, hyperedge_input_dim),
+            nn.ReLU(),
+            nn.Linear(hyperedge_input_dim, num_hyperedge_types)  # Output logits for hyperedge types
+        )
+
+    def forward(self, e_CG, e_HG):
+        """
+        Args:
+            e_CG: Edge features [B, E, F] (Batch, Edges, Features).
+            e_HG: Hyperedge features [B, M, F] (Batch, Hyperedges, Features).
+
+        Returns:
+            z_CG: Probabilities for edge types [B, E, L_CG].
+            z_HG: Probabilities for hyperedge types [B, M, L_HG].
+        """
+        # Step 1: Compute logits for edge types
+        edge_logits = self.edge_mlp(e_CG)  # [B, E, L_CG]
+
+        # Step 2: Compute logits for hyperedge types
+        hyperedge_logits = self.hyperedge_mlp(e_HG)  # [B, M, L_HG]
+
+
+        return edge_logits, hyperedge_logits
+
+class HyperEdgeAttention(nn.Module):
+    def __init__(self, input_dim_e,input_dim_v, hidden_dim,node_dim, alpha=0.2):
+        """
+        claculates alpha_mi for nodes in hyperedges.
+
+        Args:
+            input_dim: Dimensionality of input features (F).
+            hidden_dim: Dimensionality after linear transformations.
+            alpha: Negative slope for LeakyReLU activation.
+        """
+        super().__init__()
+        self.W1 = nn.Linear(input_dim_e, hidden_dim, bias=False)  # For e_HG
+        self.W2 = nn.Linear(input_dim_v, hidden_dim, bias=False)  # For v_CG
+        self.attention_vector = nn.Parameter(torch.Tensor(hidden_dim*2))  # Attention vector a
+        self.leaky_relu = nn.LeakyReLU(alpha)
+
+        # Initialize parameters
+        nn.init.xavier_uniform_(self.W1.weight, gain=1.414)
+        nn.init.xavier_uniform_(self.W2.weight, gain=1.414)
+        nn.init.xavier_uniform_(self.attention_vector.unsqueeze(0), gain=1.414)
+
+        # Node MLP (same for all heads)
+        self.f_HG_v = nn.Sequential(
+            nn.Linear(input_dim_e, hidden_dim),
+            nn.BatchNorm1d(hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, node_dim),
+            nn.BatchNorm1d(node_dim),
+        )
+
+        self.f_HG_2 = nn.Sequential(
+            nn.Linear(node_dim, hidden_dim),
+            nn.BatchNorm1d(hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, node_dim),
+            nn.BatchNorm1d(node_dim)
+        )
+
+    def forward(self, e_HG, v_CG, I_HG):
+        """
+        Args:
+            e_HG: Hyperedge features, shape [B, M, F].
+            v_CG: Node features, shape [B, N, F].
+            I_HG: Incidence matrix, shape [B, N, M]. not sure if needed..
+
+        Returns:
+            alpha_mi: Attention weights between nodes and hyperedges, shape [B, N, M]. mybe transpose?
+        """
+        B, N, M = I_HG.shape
+        F = e_HG.shape[-1]
+
+        # Step 1: Transform features
+        e_HG_proj = self.W1(e_HG)  # Shape: [B, M, hidden_dim]
+        v_CG_proj = self.W2(v_CG)  # Shape: [B, N, hidden_dim]
+
+        print("e_HG_proj ", e_HG_proj.shape)
+        print("v_CG_proj", v_CG_proj.shape)
+        # Step 2: Expand and combine features for attention
+        e_HG_expanded = e_HG_proj.unsqueeze(1).expand(-1, N, -1, -1)  # [B, N, M, hidden_dim] N replicted
+        v_CG_expanded = v_CG_proj.unsqueeze(2).expand(-1, -1, M, -1)  # [B, N, M, hidden_dim]
+
+        # Concatenate and apply attention
+        combined_features = torch.cat([e_HG_expanded, v_CG_expanded], dim=-1)  # [B, N, M, 2*hidden_dim]
+
+        print("combined_features ", combined_features.shape)
+        attn_logits = self.leaky_relu(torch.einsum("bnmf,f->bnm", combined_features, self.attention_vector))  # [B, N, M]
+        print("attn_logits", attn_logits.shape)
+        # print("attn_logits values", attn_logits)
+
+        # Step 3: Mask logits using I_HG (nodes not in hyperedge -> mask)
+        attn_logits = attn_logits.masked_fill(I_HG == 0, float('-inf'))
+        # print("attn_logits masked ", attn_logits)
+
+        # Step 4: Normalize attention scores
+        alpha_mi = Func.softmax(attn_logits/100, dim=1)  # Softmax over nodes N #todo see if keep it 100
+        alpha_mi = torch.nan_to_num(alpha_mi, nan=0.0).transpose(1,2)  # Replace NaNs with 0
+
+        # print("alpha_mi", alpha_mi.shape)# Shape: [B, N, M]
+
+        v_HG_1 = torch.einsum('bmn,bmf->bnf', alpha_mi, e_HG)  # Weighted aggregation: [B, N, F]
+
+        print("v_HG_1", v_HG_1.shape)
+        # Apply f_HG,v (MLP) to v_HG^1
+        v_HG_1_flat = v_HG_1.view(B * N, -1)  # Flatten for batchnorm
+        v_HG_1 = self.f_HG_v(v_HG_1_flat).view(B, N, -1)  # [B, N, F]
+        print("v_HG_1", v_HG_1.shape)
+
+        e_HG_2 = torch.einsum('bnm,bnf->bmf', I_HG, v_HG_1)  # Aggregate nodes to hyperedges
+
+        # Apply f_HG^2 (MLP) to e_HG^2
+        e_HG_2_flat = e_HG_2.view(B * M, -1)  # Flatten for batchnorm
+        e_HG_2 = self.f_HG_2(e_HG_2_flat).view(B, M, -1)  # [B, M, F]
+
+        print("e_HG_2", e_HG_2.shape)
+
+        return e_HG_2
+
+
+class MLPHGE(nn.Module):
+    def __init__(self, n_in, n_hid, n_out, do_prob):
+        super(MLPHGE, self).__init__()
+        self.fc1 = nn.Linear(n_in, n_hid)
+        self.fc2 = nn.Linear(n_hid, n_hid)
+        self.fc3 = nn.Linear(n_hid, n_out)
+        self.bn = nn.BatchNorm1d(n_out)
+        self.dropout_prob = do_prob
+        self.init_weights()
+
+    def init_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_normal_(m.weight.data)
+                m.bias.data.fill_(0.1)
+            elif isinstance(m, nn.BatchNorm1d):
+                m.weight.data.fill_(1)
+                m.bias.data.zero_()
+
+    def batch_norm(self, inputs):
+        x = inputs.view(inputs.size(0) * inputs.size(1), -1)
+        x = self.bn(x)
+        return x.view(inputs.size(0), inputs.size(1), -1)
+
+    def forward(self, alpha_im, V_CG):
+        """
+      Compute hyperedge features e_HG,m^1.
+
+      Args:
+          alpha_im: Node-hyperedge attention weights, shape [B, N, M].
+          V_CG: Node features, shape [B, N, F].
+
+      Returns:
+          e_HG: Hyperedge features, shape [B, M, F].
+  """
+        # Step 1: Normalize alpha_im over nodes connected to each hyperedge
+        alpha_sum =  alpha_im.sum(dim=1)   # Sum of alpha_im across nodes for each hyperedge ->the donomitor
+
+        alpha_norm = alpha_im / (alpha_sum.unsqueeze(1) + 1e-8)  # Normalize alpha_im: [B, N, M] ->the numinetor
+        print("alpha_norm", alpha_norm.shape)
+        # Step 2: Weight node features V_CG by normalized attention
+
+        weighted_nodes = torch.einsum('bnm, bnf -> bmf', alpha_norm, V_CG)  # [B, M, F]
+        print("weighted_nodes: ", weighted_nodes.shape)
+        # Step 3: Pass through edge MLP to obtain e_HG
+
+        x = Func.elu(self.fc1(weighted_nodes))
+        x = Func.dropout(x, self.dropout_prob, training=self.training)
+        x = Func.elu(self.fc2(x))
+        x = Func.dropout(x, self.dropout_prob, training=self.training)
+        e_HG = self.fc3(x)
+        # print(e_HG)
+        return e_HG
 
 
 
@@ -51,8 +246,8 @@ def compute_alpha_im(alpha_ij, I_HG, rel_rec, rel_send):
     edge_mask_rec = (rel_rec_expanded * I_HG_expanded).sum(2) > 0  # [B, E, M] checkes if node i is a reciver and also set to 1 in the hg matrix
     edge_mask_send = (rel_send_expanded * I_HG_expanded).sum(2) > 0  # [B, E, M]
     edge_mask = edge_mask_rec & edge_mask_send  # Both sender and receiver must be in hyperedge
-    print("edge_mask ", edge_mask.shape)
-    print("alpha_ij", alpha_ij.shape)
+    # print("edge_mask ", edge_mask.shape)
+    # print("alpha_ij", alpha_ij.shape)
 
     # Step 3: Mask and sum alpha_ij for edges belonging to each hyperedge
     alpha_ij_masked = alpha_ij * edge_mask  # Mask edges for each hyperedge # B, E, M
@@ -68,7 +263,7 @@ def compute_alpha_im(alpha_ij, I_HG, rel_rec, rel_send):
     N_H_m = I_HG.sum(dim=1, keepdim=True)  # Number of nodes per hyperedge [B, 1, M]
     # print(N_H_m)
     alpha_im = alpha_im / (N_H_m - 1 + 1e-8)  # Avoid division by zero
-    print("alpha_im 2 ", alpha_im)
+    # print("alpha_im 2 ", alpha_im)
     return alpha_im  # Shape: [B, N, M]
 
 
@@ -122,6 +317,7 @@ class TemporalGATLayer(nn.Module):
         self.a_forward = nn.Parameter(torch.Tensor(num_heads, self.out_dim))
         self.a_backward  = nn.Parameter(torch.Tensor(num_heads, self.out_dim))
         self.leaky_relu = nn.LeakyReLU(alpha)
+        # self.bn =  nn.BatchNorm1d(self.out_dim)
 
         # Edge MLP (same for all heads)
         self.f_CG_e = nn.Sequential(
@@ -130,10 +326,24 @@ class TemporalGATLayer(nn.Module):
             nn.Linear(self.out_dim, self.out_dim)
         )
 
+        # Node MLP (same for all heads)
+        self.f_CG_v = nn.Sequential(
+            nn.Linear(self.out_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim,hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, self.out_dim)
+        )
+
         # Initialization
         nn.init.xavier_uniform_(self.projection.weight, gain=1.414)
         nn.init.xavier_uniform_(self.a_forward, gain=1.414)
         nn.init.xavier_uniform_(self.a_backward, gain=1.414)
+
+    # def batch_norm(self, inputs):
+    #     x = inputs.view(inputs.size(0) * inputs.size(1), -1)
+    #     x = self.bn(x)
+    #     return x.view(inputs.size(0), inputs.size(1), -1)
 
     def forward(self, v_self, rel_rec, rel_send):
         """
@@ -198,13 +408,14 @@ class TemporalGATLayer(nn.Module):
         edge_input = torch.cat([weighted_v_src, weighted_v_tgt], dim=-1)  # [B, E, H, 2*D]
         e_CG= self.f_CG_e(edge_input.view(B, -1, 2 * D)).view(B, -1, H, D)  # [B, E, H, D]
 
-        print("e_CG", e_CG.shape)
+        print("e_CG", e_CG.shape) #B, E, H, D=128
         # Step 9: Aggregate edge features back to nodes
         edge_weighted = e_CG * alpha_ij.unsqueeze(-1)  # [B, E, H, D]
 
         print("edge_weighted ", edge_weighted.shape)
         v_social = torch.einsum("behd,ben->bnhd", edge_weighted, rel_rec)  # [B, N, H, D]
 
+        v_social = self.f_CG_v(v_social)
         print("v_social before agg " ,v_social.shape)
         # Step 10: Combine heads
         if self.concat_heads:
@@ -244,10 +455,10 @@ class MLP(nn.Module):
 
     def forward(self, inputs):
         print(f'MLP forward :{inputs.shape}')
-        x = F.elu(self.fc1(inputs))
-        x = F.dropout(x, self.dropout_prob, training=self.training)
-        x = F.elu(self.fc2(x))
-        x = F.dropout(x, self.dropout_prob, training=self.training)
+        x = Func.elu(self.fc1(inputs))
+        x = Func.dropout(x, self.dropout_prob, training=self.training)
+        x = Func.elu(self.fc2(x))
+        x = Func.dropout(x, self.dropout_prob, training=self.training)
         x = self.fc3(x)
         return x
 
