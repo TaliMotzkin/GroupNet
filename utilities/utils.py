@@ -93,6 +93,7 @@ def gumbel_softmax(logits, tau=1, dim=0, hard=False, eps=1e-10):
             y_hard = y_hard.cuda()
         y_hard = y_hard.zero_().scatter_(-1, k.view(shape[:-1] + (1,)), 1.0) #The result is a hard one-hot tensor where only one position is 1 and all others are 0.
         y = Variable(y_hard - y_soft.data) + y_soft #he y_hard tensor is discrete, but the difference (y_hard - y_soft.data) ensures that gradients flow through the soft version (y_soft).
+        # print(y)
     else:
         y = y_soft
     return y
