@@ -1,5 +1,5 @@
 import numpy as np
-
+import time
 import os
 import sys
 import argparse
@@ -43,7 +43,7 @@ print('device:',device)
 
 
 def train( train_loader, epoch, rel_rec, rel_send, model, encoder_timesteps, recompute_gap, total_pred_steps,tau):
-
+    starting_epoch_time = time.time()
     set_seed(42)
     model.train()
     total_iter_num = len(train_loader)
@@ -53,12 +53,14 @@ def train( train_loader, epoch, rel_rec, rel_send, model, encoder_timesteps, rec
     I_HG = None
     print(epoch , "epoch")
     for data in train_loader:
-        past_traj = data['past_traj']  # Shape: [batch_size, num_fish, obs_len, 2]
-        future_traj = data['future_traj']
+        past_traj = data['past_traj'].to(device)  # Shape: [batch_size, num_fish, obs_len, 2]
+        future_traj = data['future_traj'].to(device)
 
-        output_lists, h_g, h_hg, rel_rec, rel_send, L_SM, L_SH , L_SP, L_KL = model(past_traj,total_pred_steps,encoder_timesteps,recompute_gap,rel_rec,rel_send,tau,h_g, h_hg)
+        output_lists, h_g, h_hg, rel_rec, rel_send, L_SM, L_SH, L_SP, L_KL = model(past_traj, total_pred_steps,
+                                                                                   encoder_timesteps, recompute_gap,
+                                                                                   rel_rec, rel_send, tau, h_g, h_hg)
 
-        h_g = h_g.detach() if h_g is not None else None #for not breaking the computational graph!
+        h_g = h_g.detach() if h_g is not None else None  # for not breaking the computational graph!
         h_hg = h_hg.detach() if h_hg is not None else None
         # print(len(output_lists))
         #
@@ -69,23 +71,23 @@ def train( train_loader, epoch, rel_rec, rel_send, model, encoder_timesteps, rec
         #     iter_num += 1
 
         pred_trajs = torch.cat(output_lists["trajs"], dim=2)  # Concatenate along time (dim=2)
-        #prin("Concatenated predictions shape:", pred_trajs.shape)
-        #prin("future, ", future_traj.shape)
+        # prin("Concatenated predictions shape:", pred_trajs.shape)
+        # prin("future, ", future_traj.shape)
 
         # Compare predictions with ground truth
-        L_Rec = F.mse_loss(pred_trajs, future_traj, reduction='mean')  # Mean Squared Error
-        print("Reconstruction Loss (L_Rec):", L_Rec.item())
+        # L_Rec = F.mse_loss(pred_trajs, future_traj, reduction='mean')  # Mean Squared Error
+        # print("Reconstruction Loss (L_Rec):", L_Rec.item())
 
         means = torch.cat(output_lists["mus"], dim=2).mean(dim=3)
         L_Rec_2 = F.mse_loss(future_traj, means)
-        print("Reconstruction Loss 2 (L_Rec):", L_Rec_2.item())
 
-        print(L_SM.item())
-        print(L_SH.item())
-        print(L_SP.item())
-        print(L_KL.item())
-        print(iter_num, "iterations")
-        iter_num += 1
+        if iter_num % 2 == 0:
+            print("Reconstruction Loss 2 (L_Rec):", L_Rec_2.item())
+            print("L_SM", L_SM.item())
+            print("L_SH", L_SH.item())
+            print("L_SP", L_SP.item())
+            print("L_KL", L_KL.item())
+            print(iter_num, "iterations")
         # # Update inputs for the next batch
         # if trust_predictions:
         #     inputs = torch.cat((history_inputs[:, :, -(T_h - T_p):, :], output_traj), dim=2)
@@ -94,11 +96,19 @@ def train( train_loader, epoch, rel_rec, rel_send, model, encoder_timesteps, rec
         #
         """ optimize """
         optimizer.zero_grad()
-        total_loss = L_Rec_2  + L_SM+L_SH+L_SP
-        print("total_loss", total_loss.item())
+        total_loss = L_Rec_2 + L_SM + L_SH + L_SP + L_KL
+        if iter_num % 2 == 0:
+            print("total_loss", total_loss.item())
+            end_time = time.time()
+            elapsed_time = end_time - starting_epoch_time
+            print(f"Elapsed time for iteration {iter_num}: {elapsed_time:.2f} seconds")
+
         total_loss.backward()
         optimizer.step()
+        iter_num += 1
     scheduler.step()
+    loss_list = [L_SM.item(), L_SH.item(), L_SP.item(), L_KL.item(), L_Rec_2.item(), total_loss.item()]
+    return loss_list
 
 
         # if iter_num % iternum_print == 0:
@@ -111,10 +121,10 @@ def train( train_loader, epoch, rel_rec, rel_send, model, encoder_timesteps, rec
 
 ''' arguments'''
 
-lr = 1e-4
+lr = 0.001
 n_in = 10
 decay_step =10
-decay_gamma = 0.5
+decay_gamma = 0.85
 batch_size = 32
 num_epochs = 10
 n_hid = 128
@@ -122,9 +132,9 @@ n_out = 5
 tau = 1
 n_head=1
 do_prob = 0.2 #todo check this
-Ledge = 30
-Lhyper = 10
-num_cores= 5
+Ledge = 3
+Lhyper = 3
+num_cores= 3
 encoder_timesteps = 5
 recompute_gap = 5
 total_pred_steps=15
@@ -157,21 +167,22 @@ train_loader = DataLoader(
     pin_memory=True)
 
 
-edge = fully_connected_graph(agents_number)
-rel_rec, rel_send = edge_idx(edge,agents_number )
-rel_rec =rel_rec.unsqueeze(0)
-rel_send =rel_send.unsqueeze(0)
+
 
 
 """ start training """
 model.to(device)
 for epoch in range(0, num_epochs):
-    train(train_loader,epoch, rel_rec, rel_send, model,encoder_timesteps, recompute_gap, total_pred_steps,tau)
-
+    edge = fully_connected_graph(agents_number)
+    rel_rec, rel_send = edge_idx(edge, agents_number)
+    rel_rec = rel_rec.unsqueeze(0)
+    rel_send = rel_send.unsqueeze(0)
+    loss = train(train_loader, epoch, rel_rec, rel_send, model, encoder_timesteps, recompute_gap, total_pred_steps, tau)
 
     """ save model """
-    if  (epoch + 1) % model_save_epoch == 0:
-        model_saved = {'model_dict': model.state_dict(), 'optimizer': optimizer.state_dict(), 'scheduler': scheduler.state_dict(), 'epoch': epoch + 1}
-        saved_path = os.path.join(model_save_dir,str(epoch+1)+'.p')
+    if (epoch + 1) % model_save_epoch == 0:
+        model_saved = {'model_dict': model.state_dict(), 'optimizer': optimizer.state_dict(),
+                       'scheduler': scheduler.state_dict(), 'epoch': epoch + 1, 'loss': loss}
+        saved_path = os.path.join(model_save_dir, str(epoch + 1) + '.p')
         print("model saved")
         torch.save(model_saved, saved_path)
