@@ -18,6 +18,38 @@ from utilities.utils import gumbel_softmax
 #     "GraphConv": geom_nn.GraphConv
 # }
 
+class SeparateGRUs(nn.Module):
+    def __init__(self, input_size1, hidden_size1, input_size2, hidden_size2,  num_layers=1):
+        super(SeparateGRUs, self).__init__()
+        self.gru1 = nn.GRU(input_size1, hidden_size1,num_layers)
+        self.gru2 = nn.GRU(input_size2, hidden_size2,num_layers)
+
+    def forward(self, x1, x2,  hidden1=None,  hidden2=None):
+        # Process e_cg_2 through gru1
+        x1 = x1.permute(1, 0, 2)
+        x2 = x2.permute(1, 0, 2)
+
+        B = x1.size(1)  # Batch size for the current input
+
+        # Adjust hidden1 if it exists but batch size doesn't match
+        if hidden1 is not None:
+            if hidden1.size(1) > B:
+                hidden1 = hidden1[:, :B, :]  # Slice to match the current batch size
+
+        if hidden2 is not None:
+            if hidden2.size(1) > B:
+                hidden2 = hidden2[:, :B, :]  # Slice to match the current batch size
+
+
+
+        output1, h_n1 = self.gru1(x1, hidden1)
+        #print(f"Input x1 shape: {x1.shape}")
+        # Process e_HG_2 through gru2
+        output2, h_n2 = self.gru2(x2, hidden2)
+        #print(f"Output1 shape: {output1.shape}")  # Should be [seq_len, batch, hidden_size]
+        #print(f"h_n1 shape: {h_n1.shape}")
+        return (output1.permute(1, 0, 2), h_n1), (output2.permute(1, 0, 2), h_n2)
+
 
 class RelationTypeInference(nn.Module):
     def __init__(self, edge_input_dim, hyperedge_input_dim, num_edge_types, num_hyperedge_types, tau=1.0):
@@ -122,8 +154,8 @@ class HyperEdgeAttention(nn.Module):
         e_HG_proj = self.W1(e_HG)  # Shape: [B, M, hidden_dim]
         v_CG_proj = self.W2(v_CG)  # Shape: [B, N, hidden_dim]
 
-        print("e_HG_proj ", e_HG_proj.shape)
-        print("v_CG_proj", v_CG_proj.shape)
+        #print("e_HG_proj ", e_HG_proj.shape)
+        #print("v_CG_proj", v_CG_proj.shape)
         # Step 2: Expand and combine features for attention
         e_HG_expanded = e_HG_proj.unsqueeze(1).expand(-1, N, -1, -1)  # [B, N, M, hidden_dim] N replicted
         v_CG_expanded = v_CG_proj.unsqueeze(2).expand(-1, -1, M, -1)  # [B, N, M, hidden_dim]
@@ -131,9 +163,9 @@ class HyperEdgeAttention(nn.Module):
         # Concatenate and apply attention
         combined_features = torch.cat([e_HG_expanded, v_CG_expanded], dim=-1)  # [B, N, M, 2*hidden_dim]
 
-        print("combined_features ", combined_features.shape)
+        #print("combined_features ", combined_features.shape)
         attn_logits = self.leaky_relu(torch.einsum("bnmf,f->bnm", combined_features, self.attention_vector))  # [B, N, M]
-        print("attn_logits", attn_logits.shape)
+        #print("attn_logits", attn_logits.shape)
         # print("attn_logits values", attn_logits)
 
         # Step 3: Mask logits using I_HG (nodes not in hyperedge -> mask)
@@ -148,11 +180,11 @@ class HyperEdgeAttention(nn.Module):
 
         v_HG_1 = torch.einsum('bmn,bmf->bnf', alpha_mi, e_HG)  # Weighted aggregation: [B, N, F]
 
-        print("v_HG_1", v_HG_1.shape)
+        #print("v_HG_1", v_HG_1.shape)
         # Apply f_HG,v (MLP) to v_HG^1
         v_HG_1_flat = v_HG_1.view(B * N, -1)  # Flatten for batchnorm
         v_HG_1 = self.f_HG_v(v_HG_1_flat).view(B, N, -1)  # [B, N, F]
-        print("v_HG_1", v_HG_1.shape)
+        #print("v_HG_1", v_HG_1.shape)
 
         e_HG_2 = torch.einsum('bnm,bnf->bmf', I_HG, v_HG_1)  # Aggregate nodes to hyperedges
 
@@ -160,7 +192,7 @@ class HyperEdgeAttention(nn.Module):
         e_HG_2_flat = e_HG_2.view(B * M, -1)  # Flatten for batchnorm
         e_HG_2 = self.f_HG_2(e_HG_2_flat).view(B, M, -1)  # [B, M, F]
 
-        print("e_HG_2", e_HG_2.shape)
+        #print("e_HG_2", e_HG_2.shape)
 
         return e_HG_2
 
@@ -204,11 +236,11 @@ class MLPHGE(nn.Module):
         alpha_sum =  alpha_im.sum(dim=1)   # Sum of alpha_im across nodes for each hyperedge ->the donomitor
 
         alpha_norm = alpha_im / (alpha_sum.unsqueeze(1) + 1e-8)  # Normalize alpha_im: [B, N, M] ->the numinetor
-        print("alpha_norm", alpha_norm.shape)
+        #print("alpha_norm", alpha_norm.shape)
         # Step 2: Weight node features V_CG by normalized attention
 
         weighted_nodes = torch.einsum('bnm, bnf -> bmf', alpha_norm, V_CG)  # [B, M, F]
-        print("weighted_nodes: ", weighted_nodes.shape)
+        #print("weighted_nodes: ", weighted_nodes.shape)
         # Step 3: Pass through edge MLP to obtain e_HG
 
         x = Func.elu(self.fc1(weighted_nodes))
@@ -363,17 +395,17 @@ class TemporalGATLayer(nn.Module):
         v_proj = self.projection(v_self)# [B, N, H*out_dim]
         v_proj = v_proj.view(B, N, H, D)  # [B, N, H, D]
 
-        print("v_proj shape ", v_proj.shape)
+        #print("v_proj shape ", v_proj.shape)
 
 
-        print("rel_send ", rel_send.shape)
+        #print("rel_send ", rel_send.shape)
 
 
         # Step 3: Compute node features for each edge
         h_src = torch.einsum("ben,bnhd->behd", rel_send, v_proj)  # [B, E, H, D]
         h_tgt = torch.einsum("ben,bnhd->behd", rel_rec, v_proj)  # [B, E, H, D]
 
-        print("h_tgt ", h_tgt.shape)
+        #print("h_tgt ", h_tgt.shape)
         # Step 4: Compute attention scores for forward edges (i -> j)
         #todo make sure to look again at this tau dividings and maybe concatinate the two alphas..
         attn_ij = self.leaky_relu(torch.einsum("behd,hd->beh", h_src, self.a_forward))/500 # [B, E, num_heads]
@@ -381,7 +413,7 @@ class TemporalGATLayer(nn.Module):
         # Step 5: Compute attention scores for backward edges (j -> i)
         attn_ji = self.leaky_relu(torch.einsum("behd,hd->beh", h_tgt, self.a_backward))/500 # [B, E, num_heads]
 
-        print("attn_ji ", attn_ji.shape)
+        #print("attn_ji ", attn_ji.shape)
         attn_max = torch.maximum(attn_ij, attn_ji)
         attn_ij_stable = torch.exp(attn_ij - attn_max)
         attn_ji_stable = torch.exp(attn_ji - attn_max)
@@ -400,7 +432,7 @@ class TemporalGATLayer(nn.Module):
         v_src = torch.einsum("ben,bnhd->behd", rel_send, v_proj) # [B, E, H, D]
         v_tgt = torch.einsum("ben,bnhd->behd", rel_rec, v_proj)  # [B, E, H, D]
 
-        print("v_tgt ",v_tgt.shape)
+        #print("v_tgt ",v_tgt.shape)
 
         #Step 8:Compute edge features e_CG,ij^1
         weighted_v_src = alpha_ij.unsqueeze(-1) * v_src  # [B, E, H, D]
@@ -408,22 +440,22 @@ class TemporalGATLayer(nn.Module):
         edge_input = torch.cat([weighted_v_src, weighted_v_tgt], dim=-1)  # [B, E, H, 2*D]
         e_CG= self.f_CG_e(edge_input.view(B, -1, 2 * D)).view(B, -1, H, D)  # [B, E, H, D]
 
-        print("e_CG", e_CG.shape) #B, E, H, D=128
+        #print("e_CG", e_CG.shape) #B, E, H, D=128
         # Step 9: Aggregate edge features back to nodes
         edge_weighted = e_CG * alpha_ij.unsqueeze(-1)  # [B, E, H, D]
 
-        print("edge_weighted ", edge_weighted.shape)
+        #print("edge_weighted ", edge_weighted.shape)
         v_social = torch.einsum("behd,ben->bnhd", edge_weighted, rel_rec)  # [B, N, H, D]
 
         v_social = self.f_CG_v(v_social)
-        print("v_social before agg " ,v_social.shape)
+        #print("v_social before agg " ,v_social.shape)
         # Step 10: Combine heads
         if self.concat_heads:
             v_social = v_social.reshape(B, N, H * D)  # Concatenate heads
         else:
             v_social = v_social.mean(dim=2)  # Average heads
 
-        print("v_social after agg head ", v_social.shape)
+        #print("v_social after agg head ", v_social.shape)
         # print(v_social)
         return v_social, alpha_ij
 
@@ -454,7 +486,7 @@ class MLP(nn.Module):
         return x.view(inputs.size(0), inputs.size(1), -1)
 
     def forward(self, inputs):
-        print(f'MLP forward :{inputs.shape}')
+        #print(f'MLP forward :{inputs.shape}')
         x = Func.elu(self.fc1(inputs))
         x = Func.dropout(x, self.dropout_prob, training=self.training)
         x = Func.elu(self.fc2(x))
@@ -492,31 +524,31 @@ class MLPEncoder(nn.Module):
                 m.bias.data.fill_(0.1)
 
     def node2edge(self, x, rel_rec, rel_send):
-        print(f'edge2node: {rel_rec.shape} and x {x.shape}')
+        #print(f'edge2node: {rel_rec.shape} and x {x.shape}')
         incoming = torch.matmul(rel_rec, x)
         return incoming / incoming.size(1)
 
     def edge2node(self, x, rel_rec, rel_send):
-        print(f'node2edge encoder = {x.shape}')
+        #print(f'node2edge encoder = {x.shape}')
         receivers = torch.matmul(rel_rec.transpose(1,2), x)
         senders = torch.matmul(rel_send.transpose(1,2), x)
-        print(f'sender: {receivers.shape}')
+        #print(f'sender: {receivers.shape}')
         edges = torch.cat([senders, receivers], dim=2)
         return edges
 
     def forward(self, inputs, rel_rec, rel_send):
         #inputs -  node features in a graph, 0 - batches, 1 number of nodes?
         x = inputs.reshape(inputs.size(0), inputs.size(1), -1)
-        B = x.shape[0]
-        rel_send = rel_send.expand(B, -1, -1)
-        rel_rec = rel_rec.expand(B, -1, -1)
+        # B = x.shape[0]
+        # rel_send = rel_send.expand(B, -1, -1)
+        # rel_rec = rel_rec.expand(B, -1, -1)
 
-        print(f'this is X {x.shape}') # Batch size, nodes, time steps*features
+        #print(f'this is X {x.shape}') # Batch size, nodes, time steps*features
         v_self = self.f_h(x)
-        print(f'this is v_self: {v_self.shape}')# [B, N, hidden_dim=16]
+        #print(f'this is v_self: {v_self.shape}')# [B, N, hidden_dim=16]
         v_social, alpha_ij = self.atten(v_self, rel_rec, rel_send) # [B, N, hidden_dim=16]
 
-        print(f'this is v_social: {v_social.shape}')
+        #print(f'this is v_social: {v_social.shape}')
         # x = self.node2edge(x, rel_rec, rel_send)
 
         x = self.f_CG_v(v_social)
@@ -524,12 +556,12 @@ class MLPEncoder(nn.Module):
 
         if self.factor:
             x = self.node2edge(x, rel_rec, rel_send)
-            print(f'this is X after edge to node{x.shape}')
+            #print(f'this is X after edge to node{x.shape}')
             x = self.mlp3(x)
             x = self.edge2node(x, rel_rec, rel_send)
-            print(f'this is X after node to edge 2 {x.shape}')
+            #print(f'this is X after node to edge 2 {x.shape}')
             x = torch.cat((x, x_skip), dim=2) #back and forth conversion?
-            print(f' x after skip connection{x.shape}')
+            #print(f' x after skip connection{x.shape}')
             x = self.mlp4(x)
         else:
             x = self.mlp3(x)

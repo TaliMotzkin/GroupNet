@@ -78,23 +78,9 @@ class RNNDecoder(nn.Module):
             [nn.Linear(n_hid, n_hid) for _ in range(edge_types_hg)]
         )
 
-        f_CG_e_l = MLP(self.n_in_mlp, self.n_hid, self.n_out)
+        self.f_CG_e_l = MLP(self.n_in_mlp, self.n_hid, self.n_out)
 
-        self.hidden_r_g = nn.Linear(n_hid, n_hid, bias=False)
-        self.hidden_i_g = nn.Linear(n_hid, n_hid, bias=False)
-        self.hidden_h_g = nn.Linear(n_hid, n_hid, bias=False)
 
-        self.input_r_g = nn.Linear(n_in_node, n_hid, bias=True)
-        self.input_i_g = nn.Linear(n_in_node, n_hid, bias=True)
-        self.input_n_g = nn.Linear(n_in_node, n_hid, bias=True)
-
-        self.hidden_r_hg = nn.Linear(n_hid, n_hid, bias=False)
-        self.hidden_i_hg = nn.Linear(n_hid, n_hid, bias=False)
-        self.hidden_h_hg = nn.Linear(n_hid, n_hid, bias=False)
-
-        self.input_r_hg = nn.Linear(n_in_node, n_hid, bias=True)
-        self.input_i_hg = nn.Linear(n_in_node, n_hid, bias=True)
-        self.input_n_hg = nn.Linear(n_in_node, n_hid, bias=True)
 
         self.out_fc1 = nn.Linear(n_hid * 2, n_hid)
         self.out_fc2 = nn.Linear(n_hid, n_hid)
@@ -120,9 +106,9 @@ class RNNDecoder(nn.Module):
         receivers = torch.matmul(rel_rec_g, v_combined) #this is same as nodeto edge
         senders = torch.matmul(rel_send_g, v_combined)
         pre_msg = torch.cat([receivers, senders], dim=-1) #preliminary messages #B, E, 2*H (H=n_hid+n_out)
-        print("pre_msg", pre_msg.shape)
+        # print("pre_msg", pre_msg.shape)
         all_msgs = torch.zeros(pre_msg.size()[0], pre_msg.size()[1], self.n_hid)#tensor all_msgs to accumulate messages after processing
-        print("all_msgs1", all_msgs.shape)
+        # print("all_msgs1", all_msgs.shape)
 
         if inputs.is_cuda:
             all_msgs = all_msgs.cuda()
@@ -142,13 +128,13 @@ class RNNDecoder(nn.Module):
 
             # The second dimension - different nodes or edges. The third dimension represents different edge types?
             all_msgs += msg / norm #all masseges are e_CG_ij
-        print("all_msgs", all_msgs.shape, rel_send_g.shape)
+        # print("all_msgs", all_msgs.shape, rel_send_g.shape)
         # print("msg", msg.shape)
 
         agg_msgs = all_msgs.transpose(-2, -1).matmul(rel_send_g).transpose(-2, -1) #aggregates incoming messages to each node?
-        print("agg_msgs after agg", agg_msgs.shape)
+        # print("agg_msgs after agg", agg_msgs.shape)
         hidden_g = agg_msgs.contiguous() / inputs.size(2) #~e_CG_ij
-        print("agg_msgs after agg norm", hidden_g.shape)
+        # print("agg_msgs after agg norm", hidden_g.shape)
 
 
         if pre_train:
@@ -157,7 +143,7 @@ class RNNDecoder(nn.Module):
                 hidden_hg = hidden_hg.cuda()
         if not pre_train: #same as for the G!
             pre_msg = torch.einsum('bnm,bnf->bmf', I_HG, v_combined)  # Aggregate nodes to hyperedges
-            print("pre_msg hg" , pre_msg.shape)
+            # print("pre_msg hg" , pre_msg.shape)
 
             all_msgs =  torch.zeros(pre_msg.size(0), pre_msg.size(1), self.msg_out_shape)
             if inputs.is_cuda:
@@ -179,11 +165,11 @@ class RNNDecoder(nn.Module):
                 # print("all_msgs loop", all_msgs.shape)
                 # print("msg", msg.shape)
 
-            print("all_msgs hg1", all_msgs.shape, I_HG.shape)
+            #print("all_msgs hg1", all_msgs.shape, I_HG.shape)
             agg_msgs = all_msgs.transpose(-2, -1).matmul(I_HG.transpose(-2, -1)).transpose(-2, -1)
-            print("agg_msgs hg", agg_msgs.shape)
+            #print("agg_msgs hg", agg_msgs.shape)
             hidden_hg = agg_msgs.contiguous() / inputs.size(2)
-            print("hidden_hg hg", hidden_hg.shape)
+            #print("hidden_hg hg", hidden_hg.shape)
 
 
 
@@ -193,28 +179,31 @@ class RNNDecoder(nn.Module):
 
         v = F.dropout(F.relu(self.out_fc2(v)), p=self.dropout_prob)
 
-        print("v", v.shape)
+        #print("v", v.shape)
         # print(pred[0,0])
 
         alpha = self.W_alpha(v) #alpha represents mixing weights (computed using softmax for normalization), and mu and sigma are the means and variances
         alpha = F.softmax(alpha, dim=-1)
-        print("alpha", alpha.shape)
+        #print("alpha", alpha.shape)
         mu = self.W_mu(v)
         mu = mu.reshape(mu.shape[0], mu.shape[1], self.num_cores, self.dim)
         sigma = torch.ones((mu.shape[0], mu.shape[1], self.num_cores, self.dim)) * 1
-        print("sigma", sigma.shape)
+        #print("sigma", sigma.shape)
         if inputs.is_cuda:
             sigma = sigma.cuda()
 
         pred = sample_core(alpha, mu)
-        print("after sample core?", pred.shape)
+        #print("after sample core?", pred.shape)
         for i in range(mu.shape[2]):
             mu[:, :, i, :] += inputs #offset the transformation done by the model??
         if inputs.is_cuda:
             pred = pred.cuda()
-        print("last mu", mu.shape)
+        #print("last mu", mu.shape)
+        noise = torch.randn_like(pred) * sigma.mean(dim=2)  # todo - not sure if adding - Use sigma to scale the noise
+        pred = pred + noise
+
         pred = inputs + pred
-        print("lsst pred ", pred.shape)
+        #print("lsst pred ", pred.shape)
         return pred, alpha, mu, sigma, hidden_g, hidden_hg
         # return 1, 1, 1, 1, 1, 1
 
@@ -228,13 +217,7 @@ class RNNDecoder(nn.Module):
         I_HG,
         output_steps,
         v_combined,
-        pred_steps=1,
-        burn_in=False,
         burn_in_steps=1,
-        dynamic_graph=False,
-        encoder=None,
-        temp=None,
-        env=None,
         pre_train=False,
     ):
 
@@ -257,7 +240,7 @@ class RNNDecoder(nn.Module):
             else:
                 ins = pred_all[step - 1]
 
-            print("ins", ins.shape)
+            #print("ins", ins.shape)
             pred, alpha, mu, sigma, hidden_g, hidden_hg = self.single_step_forward(
                 ins,
                 rel_rec_g,
@@ -280,6 +263,6 @@ class RNNDecoder(nn.Module):
         sigmas = torch.stack(sigma_all, dim=2)
 
         print(preds.transpose(1, 2).contiguous().shape, alphas.shape, mus.shape, sigmas.shape)
-        print(preds.transpose(1, 2).contiguous())
-        print(data)
+        # print(preds.transpose(1, 2).contiguous())
+        # print(data)
         return preds.transpose(1, 2).contiguous(), alphas, mus, sigmas
