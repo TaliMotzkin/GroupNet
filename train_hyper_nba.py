@@ -10,6 +10,7 @@ from torch.optim import lr_scheduler
 sys.path.append(os.getcwd())
 from torch.utils.data import DataLoader
 from data.dataloader_fish import FISHDataset, seq_collate
+from data.dataloader_nba import NBADataset
 from model.GroupNet_nba import GroupNet
 import math
 
@@ -34,12 +35,12 @@ parser.add_argument('--iternum_print', type=int, default=100)
 parser.add_argument('--ztype', default='gaussian')
 parser.add_argument('--zdim', type=int, default=32)
 parser.add_argument('--hidden_dim', type=int, default=64)
-parser.add_argument('--hyper_scales', nargs='+', type=int,default=[5,20])#todo make sure 5,11 unrelated to 11 players?
+parser.add_argument('--hyper_scales', nargs='+', type=int,default=[5,11])#todo make sure 5,11 unrelated to 11 players?
 parser.add_argument('--num_decompose', type=int, default=2)
 parser.add_argument('--min_clip', type=float, default=2.0)
 
-parser.add_argument('--model_save_dir', default='saved_models/fish')
-parser.add_argument('--model_save_epoch', type=int, default=5)
+parser.add_argument('--model_save_dir', default='saved_models/nba')
+parser.add_argument('--model_save_epoch', type=int, default=9)
 
 parser.add_argument('--epoch_continue', type=int, default=0)
 parser.add_argument('--gpu', type=int, default=0)
@@ -84,7 +85,7 @@ optimizer = optim.Adam(model.parameters(), lr=args.lr)
 scheduler = lr_scheduler.StepLR(optimizer, step_size=args.decay_step, gamma=args.decay_gamma)
 
 """ dataloader """
-train_set = FISHDataset(
+train_set = NBADataset(
     obs_len=args.past_length,
     pred_len=args.future_length,
     training=True)

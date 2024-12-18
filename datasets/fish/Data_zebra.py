@@ -154,13 +154,13 @@ class FishTrajectoryDataset2(Dataset):
         return len(self.fish_ids)
 
     def get_trajectories(self):
-        traj_num = self.num_frames // 25   #19500/5 = 780 traj total
+        traj_num = self.num_frames // 100   #19500/100 = 195 traj total
         #todo for now it is set to one csv, maybe will need to add more from other datasets and manage the concatinations
         all_all_fish_loc = [] #shape (N,5, 20, 2) ->number of trajectories (3900), frames per 1 trj, fish, x.y coords
         for i in range(traj_num):
             all_fish_loc = [] #shape 5, 20, 2)
-            for j in range(5):
-                time_stamp = i*25 + j*5
+            for j in range(20):
+                time_stamp = i*100 + j*5
                 curr_frame = [self.data[fish_id][time_stamp] for fish_id in self.fish_ids]
                 all_fish_loc.append(curr_frame)
             all_all_fish_loc.append(all_fish_loc)# preparing 3900 different trajectories
@@ -239,8 +239,8 @@ print(len(all_trajs))
 index = list(range(len(all_trajs)))
 # from random import shuffle
 # shuffle(index)
-train_set = all_trajs[index[100:102]]
-test_set = all_trajs[index[778:]]
+train_set = all_trajs[index[:10]]
+test_set = all_trajs[index[160:]]
 print('train num:',train_set.shape[0])
 print('test num:',test_set.shape[0])
 

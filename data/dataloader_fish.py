@@ -2,7 +2,7 @@ import os, random, numpy as np, copy
 
 from torch.utils.data import Dataset
 import torch
-
+import math
 
 def seq_collate(data):
 
@@ -69,9 +69,12 @@ class FISHDataset(Dataset):
 class FISHDataset2(Dataset):
     """Dataloder for the Trajectory datasets"""
     def __init__(
-        self, training=True
+        self, encoder_timesteps, recompute_gap, total_pred_steps,training=True,
+
     ):
         super(FISHDataset2, self).__init__()
+        self.times = math.ceil((total_pred_steps - encoder_timesteps) / recompute_gap)
+        self.encoder_timesteps = encoder_timesteps
 
 
         if training:
@@ -102,6 +105,9 @@ class FISHDataset2(Dataset):
 
     def __getitem__(self, index):
         # print(self.traj_abs.shape)
-        out = self.traj_abs[index, :, :, :]
+        past_traj = self.traj_abs[index, :, :self.encoder_timesteps, :]
+        future_traj = self.traj_abs[index, :, self.encoder_timesteps:, :]
+        out = [past_traj, future_traj]
+        return out
 
         return out
