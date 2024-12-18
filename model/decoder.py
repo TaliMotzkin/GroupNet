@@ -177,7 +177,7 @@ class RNNDecoder(nn.Module):
             F.relu(self.out_fc1(torch.cat((hidden_g, hidden_hg), dim=-1))),
             p=self.dropout_prob,)
 
-        v = F.dropout(F.relu(self.out_fc2(v)), p=self.dropout_prob)
+        # v = F.dropout(F.relu(self.out_fc2(v)), p=self.dropout_prob)
 
         #print("v", v.shape)
         # print(pred[0,0])
@@ -234,7 +234,7 @@ class RNNDecoder(nn.Module):
         hidden_hg =1
 
         for step in range(output_steps):
-            print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ step", step)
+            # print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ step", step)
             if step < burn_in_steps:
                 ins = inputs[:, step, :, :] #takes only 1 T?...
             else:
@@ -262,7 +262,7 @@ class RNNDecoder(nn.Module):
         mus = torch.stack(mu_all, dim=2)
         sigmas = torch.stack(sigma_all, dim=2)
 
-        print(preds.transpose(1, 2).contiguous().shape, alphas.shape, mus.shape, sigmas.shape)
+        # print(preds.transpose(1, 2).contiguous().shape, alphas.shape, mus.shape, sigmas.shape)
         # print(preds.transpose(1, 2).contiguous())
         # print(data)
         return preds.transpose(1, 2).contiguous(), alphas, mus, sigmas

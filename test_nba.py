@@ -20,21 +20,21 @@ class Constant:
     NORMALIZATION_COEF = 7
     PLAYER_CIRCLE_SIZE = 12 / NORMALIZATION_COEF
     INTERVAL = 10
-    # DIFF = 0
-    DIFF = 6
+    DIFF = 0
+    # DIFF = 6
     X_MIN = 0
-    # X_MAX = 1000
-    X_MAX = 100
+    X_MAX = 1000
+    # X_MAX = 100
     Y_MIN = 0
-    # Y_MAX = 1000
-    Y_MAX = 50
+    Y_MAX = 1000
+    # Y_MAX = 50
     COL_WIDTH = 0.3
     SCALE = 1.65
     FONTSIZE = 6
-    X_CENTER = X_MAX / 2 - DIFF / 1.5 + 0.10
-    # X_CENTER = 500
-    Y_CENTER = Y_MAX - DIFF / 1.5 - 0.35
-    # Y_CENTER = 500
+    # X_CENTER = X_MAX / 2 - DIFF / 1.5 + 0.10
+    X_CENTER = 500
+    # Y_CENTER = Y_MAX - DIFF / 1.5 - 0.35
+    Y_CENTER = 500
     MESSAGE = 'You can rerun the script and choose any event from 0 to '
 
 def draw_result(future,past,mode='pre'):
@@ -46,7 +46,7 @@ def draw_result(future,past,mode='pre'):
     for idx in range(10):
         plt.clf()
         traj = trajs[idx]#per batch?
-        traj = traj*94/28
+        # traj = traj*94/28
         actor_num = traj.shape[0]
         length = traj.shape[1]
         
@@ -93,15 +93,15 @@ def draw_result(future,past,mode='pre'):
                 else:
                     plt.plot(x, y, color=color,alpha=1,linewidth=2)
 
-        # court = plt.imread("datasets/fish/tank2.png")
-        court = plt.imread("datasets/nba/court.png")
+        court = plt.imread("datasets/fish/tank2.png")
+        # court = plt.imread("datasets/nba/court.png")
 
         plt.imshow(court, zorder=0, extent=[Constant.X_MIN, Constant.X_MAX - Constant.DIFF,
                                             Constant.Y_MAX, Constant.Y_MIN],alpha=0.5)
         if mode == 'pre':
-            plt.savefig('vis/nba_from_groupnet/'+str(idx)+'pre.png')
+            plt.savefig('vis/fish/'+str(idx)+'pre.png')
         else:
-            plt.savefig('vis/nba_from_groupnet/'+str(idx)+'gt.png')
+            plt.savefig('vis/fish/'+str(idx)+'gt.png')
     print('ok')
     return 
 
@@ -262,7 +262,7 @@ if __name__ == '__main__':
     torch.set_grad_enabled(False)
 
 
-    test_dset = NBADataset(
+    test_dset = FISHDataset(
         obs_len=args.past_length,
         pred_len=args.future_length,
         training=False)

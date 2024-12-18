@@ -509,7 +509,7 @@ class MLPEncoder(nn.Module):
             self.out_dim = n_hid // num_heads
 
         # Final node MLP
-        self.f_CG_v = MLP(num_heads * self.out_dim if concat_heads else self.out_dim, self.out_dim, self.out_dim, do_prob)
+        self.f_CG_v = MLP(num_heads * self.out_dim if concat_heads else self.out_dim, self.out_dim, n_out, do_prob)
         self.mlp3 = MLP(n_hid, n_hid, n_hid, do_prob)
         self.mlp4 = MLP(n_hid * 3 if factor else n_hid * 2, n_hid, n_hid, do_prob)
         self.fc_out = nn.Linear(n_hid, n_out)
@@ -552,19 +552,21 @@ class MLPEncoder(nn.Module):
         # x = self.node2edge(x, rel_rec, rel_send)
 
         x = self.f_CG_v(v_social)
-        x_skip = x #skip connection
+        # x_skip = x #skip connection
+        #
+        # if self.factor:
+        #     x = self.node2edge(x, rel_rec, rel_send)
+        #     #print(f'this is X after edge to node{x.shape}')
+        #     x = self.mlp3(x)
+        #     x = self.edge2node(x, rel_rec, rel_send)
+        #     #print(f'this is X after node to edge 2 {x.shape}')
+        #     x = torch.cat((x, x_skip), dim=2) #back and forth conversion?
+        #     #print(f' x after skip connection{x.shape}')
+        #     x = self.mlp4(x)
+        # else:
+        #     x = self.mlp3(x)
+        #     x = torch.cat((x, x_skip), dim=2)
+        #     x = self.mlp4(x)
+        # return self.fc_out(x), v_self, alpha_ij
+        return x, v_self, alpha_ij
 
-        if self.factor:
-            x = self.node2edge(x, rel_rec, rel_send)
-            #print(f'this is X after edge to node{x.shape}')
-            x = self.mlp3(x)
-            x = self.edge2node(x, rel_rec, rel_send)
-            #print(f'this is X after node to edge 2 {x.shape}')
-            x = torch.cat((x, x_skip), dim=2) #back and forth conversion?
-            #print(f' x after skip connection{x.shape}')
-            x = self.mlp4(x)
-        else:
-            x = self.mlp3(x)
-            x = torch.cat((x, x_skip), dim=2)
-            x = self.mlp4(x)
-        return self.fc_out(x), v_self, alpha_ij
