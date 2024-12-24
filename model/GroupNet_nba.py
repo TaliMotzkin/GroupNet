@@ -234,9 +234,9 @@ class PastEncoder(nn.Module):
         B = x.shape[0]
         N = x.shape[1]
         category = torch.zeros(N,3).type_as(x)
-        category[0:5,0] = 1
-        category[5:10,1] = 1
-        category[10,2] = 1
+        category[0:4,0] = 1
+        category[4:7,1] = 1
+        category[7,2] = 1
         category = category.repeat(B,1,1)
         x = torch.cat((x,category),dim=-1)
         return x
@@ -349,16 +349,16 @@ class FutureEncoder(nn.Module):
         B = x.shape[0]
         N = x.shape[1]
         category = torch.zeros(N,3).type_as(x)
-        category[0:5,0] = 1
-        category[5:10,1] = 1
-        category[10,2] = 1
+        category[0:4,0] = 1 #todo changed here the categories by players
+        category[4:7,1] = 1
+        category[7,2] = 1
         category = category.repeat(B,1,1)
         x = torch.cat((x,category),dim=-1)
         return x
 
     def forward(self, inputs, batch_size,agent_num,past_feature):
         length = inputs.shape[1]
-        agent_num = 20 #todo watch for fish number - make dynamic with different datasets?
+        agent_num = 8 #todo watch for fish number - make dynamic with different datasets?
         tf_in = self.input_fc(inputs).view(batch_size*agent_num, length, self.model_dim)
 
         tf_in_pos = self.pos_encoder(tf_in, num_a=batch_size*agent_num)

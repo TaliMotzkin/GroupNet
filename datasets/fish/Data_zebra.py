@@ -265,14 +265,20 @@ class FishTrajectoryDataset3(Dataset):
 
         self.transpose = transpose
         # Group data by fish ID (xN, yN pairs) and reshape into batches
-        self.fish_ids = [col.split('X')[1] for col in data_30.columns if col.startswith('X')]
+        self.fish_ids = [col.split('X')[1] for col in self.data_30.columns if col.startswith('X')]
+
         self.data_30 = {fish_id: self.data_30[[f'X{fish_id}', f'Y{fish_id}']].values for fish_id in self.fish_ids}
+
         self.data_25 = {fish_id: self.data_25[[f'X{fish_id}', f'Y{fish_id}']].values for fish_id in self.fish_ids}
         self.data_35 = {fish_id: self.data_35[[f'X{fish_id}', f'Y{fish_id}']].values for fish_id in self.fish_ids}
 
-        self.num_frames_30 = len(self.data_30)
-        self.num_frames_25 = len(self.data_25)
-        self.num_frames_35 = len(self.data_35)
+        self.num_frames_30 = len(self.data_30["0"])
+        self.num_frames_25 = len(self.data_25["0"])
+
+        print("self.num_frames_25", self.num_frames_25)
+        self.num_frames_35 = len(self.data_35["0"])
+
+        print("self.num_frames_35", self.num_frames_35)
 
 
     def __len__(self):
@@ -281,8 +287,9 @@ class FishTrajectoryDataset3(Dataset):
 
     def get_trajectories(self):
         traj_num_30 = self.num_frames_30 // 90   #350138/90 = 3890 traj total
-        traj_num_25 = self.num_frames_25 // 75 #106001/75 = 1413 traj total
-        traj_num_35 = self.num_frames_35 // 50 #415409/50  = 8308 traj total ----> total concat wil be 13611 *0.65 --->8847
+        print("traj_num_30", traj_num_30)
+        traj_num_25 = self.num_frames_25 // 75 #106000/75 = 1413 traj total
+        traj_num_35 = self.num_frames_35 // 105 #415409/105  = 3956 traj total ----> total concat wil be 9259 *0.65 --->6018
 
         #todo for now it is set to one csv, maybe will need to add more from other datasets and manage the concatinations
         all_all_fish_loc = [] #shape (N,15, 20, 2) ->number of trajectories (3900), frames per 1 trj, fish, x.y coords
@@ -317,9 +324,9 @@ class FishTrajectoryDataset3(Dataset):
 
 
 data_target = 'fish/'
-file_path_30 = r'C:\Users\motzk\Documents\Master\Project\HG\code\trajectory_group_net\GroupNet\GroupNet\datasets\fish\fish_coords_20.csv'
-file_path_25 = r'C:\Users\motzk\Documents\Master\Project\HG\code\trajectory_group_net\GroupNet\GroupNet\datasets\fish\fish_coords_25.csv'
-file_path_35 = r'C:\Users\motzk\Documents\Master\Project\HG\code\trajectory_group_net\GroupNet\GroupNet\datasets\fish\fish_coords_35.csv'
+file_path_30 = 'fish_coords_48.csv'
+file_path_25 = 'fish_coords_36.csv'
+file_path_35 = 'fish_coords_20.csv'
 
 dataset = FishTrajectoryDataset3(file_path_30 ,file_path_25,file_path_35, True)
 all_trajs = dataset.get_trajectories()

@@ -28,9 +28,9 @@ class FISHDataset(Dataset):
         self.seq_len = self.obs_len + self.pred_len
 
         if training:
-            data_root = 'datasets/fish/fish/train.npy'
+            data_root = 'datasets/fish/fish/train3.npy'
         else:
-            data_root = 'datasets/fish/fish/test.npy'
+            data_root = 'datasets/fish/fish/test3.npy'
 
         self.trajs = np.load(data_root)
 
@@ -47,7 +47,7 @@ class FISHDataset(Dataset):
 
         self.traj_abs = self.traj_abs.permute(0,2,1,3) #number of traj, number of fish, number of time frames, xy coords
         self.traj_norm = self.traj_norm.permute(0,2,1,3)
-        # print(self.traj_abs.shape)
+        print(self.traj_abs.shape)
 
     def __len__(self):
         return self.batch_len
