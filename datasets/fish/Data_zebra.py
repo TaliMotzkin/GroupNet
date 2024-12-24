@@ -156,9 +156,9 @@ class FishTrajectoryDataset2(Dataset):
     def get_trajectories(self):
         traj_num = self.num_frames // 100   #19500/100 = 195 traj total
         #todo for now it is set to one csv, maybe will need to add more from other datasets and manage the concatinations
-        all_all_fish_loc = [] #shape (N,5, 20, 2) ->number of trajectories (3900), frames per 1 trj, fish, x.y coords
+        all_all_fish_loc = [] #shape (N,20, 20, 2) ->number of trajectories (3900), frames per 1 trj, fish, x.y coords
         for i in range(traj_num):
-            all_fish_loc = [] #shape 5, 20, 2)
+            all_fish_loc = [] #shape 20, 20, 2)
             for j in range(20):
                 time_stamp = i*100 + j*5
                 curr_frame = [self.data[fish_id][time_stamp] for fish_id in self.fish_ids]
@@ -232,8 +232,96 @@ class FishTrajectoryDataset2(Dataset):
 
 
 
-data_target = 'fish'
-dataset = FishTrajectoryDataset2(trajectories_data, True)
+# data_target = 'fish'
+# dataset = FishTrajectoryDataset2(trajectories_data, True)
+# all_trajs = dataset.get_trajectories()
+# print(len(all_trajs))
+# index = list(range(len(all_trajs)))
+# # from random import shuffle
+# # shuffle(index)
+# train_set = all_trajs[index[:10]]
+# test_set = all_trajs[index[160:]]
+# print('train num:',train_set.shape[0])
+# print('test num:',test_set.shape[0])
+#
+# np.save(data_target+'/train2.npy',train_set)
+# np.save(data_target+'/test2.npy',test_set)
+
+
+## for guppy fish with regular algo
+
+
+class FishTrajectoryDataset3(Dataset):
+    def __init__(self, data_30, data_25, data_35, transpose=False):
+        """
+        Initializes the dataset.
+        Args:
+            data_30 (pd.DataFrame): DataFrame containing the fish trajectory data with 30 frame rate - and same for the other data sets .
+        """
+
+        self.data_30 = pd.read_csv(data_30)
+        self.data_25 = pd.read_csv(data_25)
+        self.data_35 = pd.read_csv(data_35)
+
+        self.transpose = transpose
+        # Group data by fish ID (xN, yN pairs) and reshape into batches
+        self.fish_ids = [col.split('X')[1] for col in data_30.columns if col.startswith('X')]
+        self.data_30 = {fish_id: self.data_30[[f'X{fish_id}', f'Y{fish_id}']].values for fish_id in self.fish_ids}
+        self.data_25 = {fish_id: self.data_25[[f'X{fish_id}', f'Y{fish_id}']].values for fish_id in self.fish_ids}
+        self.data_35 = {fish_id: self.data_35[[f'X{fish_id}', f'Y{fish_id}']].values for fish_id in self.fish_ids}
+
+        self.num_frames_30 = len(self.data_30)
+        self.num_frames_25 = len(self.data_25)
+        self.num_frames_35 = len(self.data_35)
+
+
+    def __len__(self):
+        #number of fishes
+        return len(self.fish_ids)
+
+    def get_trajectories(self):
+        traj_num_30 = self.num_frames_30 // 90   #350138/90 = 3890 traj total
+        traj_num_25 = self.num_frames_25 // 75 #106001/75 = 1413 traj total
+        traj_num_35 = self.num_frames_35 // 50 #415409/50  = 8308 traj total ----> total concat wil be 13611 *0.65 --->8847
+
+        #todo for now it is set to one csv, maybe will need to add more from other datasets and manage the concatinations
+        all_all_fish_loc = [] #shape (N,15, 20, 2) ->number of trajectories (3900), frames per 1 trj, fish, x.y coords
+        for i in range(traj_num_30):
+            all_fish_loc = [] #shape 15, 20, 2)
+            for j in range(15):
+                time_stamp = i*90 + j*6
+                curr_frame = [self.data_30[fish_id][time_stamp] for fish_id in self.fish_ids]
+                all_fish_loc.append(curr_frame)
+            all_all_fish_loc.append(all_fish_loc)# preparing 3900 different trajectories
+
+        for i in range(traj_num_25):
+            all_fish_loc = [] #shape 15, 20, 2)
+            for j in range(15):
+                time_stamp = i*75 + j*5
+                curr_frame = [self.data_25[fish_id][time_stamp] for fish_id in self.fish_ids]
+                all_fish_loc.append(curr_frame)
+            all_all_fish_loc.append(all_fish_loc)
+
+
+        for i in range(traj_num_35):
+            all_fish_loc = [] #shape 15, 20, 2)
+            for j in range(15):
+                time_stamp = i*105 + j*7
+                curr_frame = [self.data_35[fish_id][time_stamp] for fish_id in self.fish_ids]
+                all_fish_loc.append(curr_frame)
+            all_all_fish_loc.append(all_fish_loc)
+
+
+        all_all_fish_loc = np.array(all_all_fish_loc, dtype=np.float32)
+        return all_all_fish_loc
+
+
+data_target = 'fish/'
+file_path_30 = r'C:\Users\motzk\Documents\Master\Project\HG\code\trajectory_group_net\GroupNet\GroupNet\datasets\fish\fish_coords_20.csv'
+file_path_25 = r'C:\Users\motzk\Documents\Master\Project\HG\code\trajectory_group_net\GroupNet\GroupNet\datasets\fish\fish_coords_25.csv'
+file_path_35 = r'C:\Users\motzk\Documents\Master\Project\HG\code\trajectory_group_net\GroupNet\GroupNet\datasets\fish\fish_coords_35.csv'
+
+dataset = FishTrajectoryDataset3(file_path_30 ,file_path_25,file_path_35, True)
 all_trajs = dataset.get_trajectories()
 print(len(all_trajs))
 index = list(range(len(all_trajs)))
@@ -244,5 +332,5 @@ test_set = all_trajs[index[160:]]
 print('train num:',train_set.shape[0])
 print('test num:',test_set.shape[0])
 
-np.save(data_target+'/train2.npy',train_set)
-np.save(data_target+'/test2.npy',test_set)
+np.save(data_target+'/train3.npy',train_set)
+np.save(data_target+'/test3.npy',test_set)

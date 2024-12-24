@@ -358,7 +358,7 @@ class FutureEncoder(nn.Module):
 
     def forward(self, inputs, batch_size,agent_num,past_feature):
         length = inputs.shape[1]
-        agent_num = 11 #todo watch for fish number - make dynamic with different datasets?
+        agent_num = 20 #todo watch for fish number - make dynamic with different datasets?
         tf_in = self.input_fc(inputs).view(batch_size*agent_num, length, self.model_dim)
 
         tf_in_pos = self.pos_encoder(tf_in, num_a=batch_size*agent_num)
@@ -491,6 +491,7 @@ class GroupNet(nn.Module):
         return loss
     
     def calculate_loss_kl(self,qz_distribution,pz_distribution,batch_size,agent_num,min_clip):
+
         loss = qz_distribution.kl(pz_distribution).sum()
         loss /= (batch_size * agent_num)
         loss_clamp = loss.clamp_min_(min_clip)

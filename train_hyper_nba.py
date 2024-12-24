@@ -27,10 +27,10 @@ parser.add_argument('--traj_scale', type=int, default=1)
 parser.add_argument('--learn_prior', action='store_true', default=False)
 parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--sample_k', type=int, default=20)
-parser.add_argument('--num_epochs', type=int, default=10)
+parser.add_argument('--num_epochs', type=int, default=100)
 parser.add_argument('--decay_step', type=int, default=10)
 parser.add_argument('--decay_gamma', type=float, default=0.5)
-parser.add_argument('--iternum_print', type=int, default=100)
+parser.add_argument('--iternum_print', type=int, default=10)
 
 parser.add_argument('--ztype', default='gaussian')
 parser.add_argument('--zdim', type=int, default=32)
@@ -85,7 +85,7 @@ optimizer = optim.Adam(model.parameters(), lr=args.lr)
 scheduler = lr_scheduler.StepLR(optimizer, step_size=args.decay_step, gamma=args.decay_gamma)
 
 """ dataloader """
-train_set = NBADataset(
+train_set = FISHDataset(
     obs_len=args.past_length,
     pred_len=args.future_length,
     training=True)

@@ -79,9 +79,15 @@ def train( train_loader, epoch, rel_rec, rel_send, model, encoder_timesteps, rec
         # print("Reconstruction Loss (L_Rec):", L_Rec.item())
 
         means = torch.cat(output_lists["mus"], dim=2).mean(dim=3)
-        L_Rec_2 = F.mse_loss(future_traj, means)
+        # L_Rec_2 = F.mse_loss(future_traj, means)
+        B, A, T, F = future_traj.shape
+        L_Rec_2 = (future_traj - means).pow(2).sum()/ (B*T)
 
-        if iter_num % 2 == 0:
+        # print("future", future_traj[0,0])
+        # print("pasts", past_traj[0,0])
+        # print("means ", means[0,0])
+
+        if iter_num % 10 == 0:
             print("Reconstruction Loss 2 (L_Rec):", L_Rec_2.item())
             print("L_SM", L_SM.item())
             print("L_SH", L_SH.item())
@@ -97,7 +103,7 @@ def train( train_loader, epoch, rel_rec, rel_send, model, encoder_timesteps, rec
         """ optimize """
         optimizer.zero_grad()
         total_loss = L_Rec_2 + L_SM + L_SH + L_SP + L_KL
-        if iter_num % 2 == 0:
+        if iter_num % 10 == 0:
             print("total_loss", total_loss.item())
             end_time = time.time()
             elapsed_time = end_time - starting_epoch_time
@@ -105,6 +111,9 @@ def train( train_loader, epoch, rel_rec, rel_send, model, encoder_timesteps, rec
 
         total_loss.backward()
         optimizer.step()
+        for name, parameter in model.named_parameters():
+            if parameter.grad is not None:
+                print(f"{name} gradient norm: {parameter.grad.norm().item()}")
         iter_num += 1
     scheduler.step()
     loss_list = [L_SM.item(), L_SH.item(), L_SP.item(), L_KL.item(), L_Rec_2.item(), total_loss.item()]
@@ -175,8 +184,8 @@ model.to(device)
 for epoch in range(0, num_epochs):
     edge = fully_connected_graph(agents_number)
     rel_rec, rel_send = edge_idx(edge, agents_number)
-    rel_rec = rel_rec.unsqueeze(0)
-    rel_send = rel_send.unsqueeze(0)
+    rel_rec = rel_rec.unsqueeze(0).to(device)
+    rel_send = rel_send.unsqueeze(0).to(device)
     loss = train(train_loader, epoch, rel_rec, rel_send, model, encoder_timesteps, recompute_gap, total_pred_steps, tau)
 
     """ save model """

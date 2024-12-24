@@ -244,6 +244,8 @@ def build_dynamic_graph_and_hypergraph(z_CG, z_HG, rel_rec, rel_send, I_HG):
     return new_rel_rec, new_rel_send, new_I_HG, edge_types, hyperedge_types
 
 
+
+
 def reconstruction_loss(future_traj, mu):
     """
     Computes the reconstruction loss L_Rec.

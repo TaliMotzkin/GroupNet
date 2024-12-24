@@ -151,8 +151,8 @@ class HyperEdgeAttention(nn.Module):
         F = e_HG.shape[-1]
 
         # Step 1: Transform features
-        e_HG_proj = self.W1(e_HG)  # Shape: [B, M, hidden_dim]
-        v_CG_proj = self.W2(v_CG)  # Shape: [B, N, hidden_dim]
+        e_HG_proj = self.leaky_relu (self.W1(e_HG) ) # Shape: [B, M, hidden_dim]
+        v_CG_proj = self.leaky_relu (self.W2(v_CG)  )# Shape: [B, N, hidden_dim]
 
         #print("e_HG_proj ", e_HG_proj.shape)
         #print("v_CG_proj", v_CG_proj.shape)
@@ -176,21 +176,21 @@ class HyperEdgeAttention(nn.Module):
         alpha_mi = Func.softmax(attn_logits/100, dim=1)  # Softmax over nodes N #todo see if keep it 100
         alpha_mi = torch.nan_to_num(alpha_mi, nan=0.0).transpose(1,2)  # Replace NaNs with 0
 
-        # print("alpha_mi", alpha_mi.shape)# Shape: [B, N, M]
+        # print("alpha_mi", alpha_mi)# Shape: [B, N, M]
 
         v_HG_1 = torch.einsum('bmn,bmf->bnf', alpha_mi, e_HG)  # Weighted aggregation: [B, N, F]
 
         #print("v_HG_1", v_HG_1.shape)
         # Apply f_HG,v (MLP) to v_HG^1
         v_HG_1_flat = v_HG_1.view(B * N, -1)  # Flatten for batchnorm
-        v_HG_1 = self.f_HG_v(v_HG_1_flat).view(B, N, -1)  # [B, N, F]
+        v_HG_1 = self.leaky_relu (self.f_HG_v(v_HG_1_flat).view(B, N, -1) ) # [B, N, F]
         #print("v_HG_1", v_HG_1.shape)
 
         e_HG_2 = torch.einsum('bnm,bnf->bmf', I_HG, v_HG_1)  # Aggregate nodes to hyperedges
 
         # Apply f_HG^2 (MLP) to e_HG^2
         e_HG_2_flat = e_HG_2.view(B * M, -1)  # Flatten for batchnorm
-        e_HG_2 = self.f_HG_2(e_HG_2_flat).view(B, M, -1)  # [B, M, F]
+        e_HG_2 =self.leaky_relu ( self.f_HG_2(e_HG_2_flat).view(B, M, -1) ) # [B, M, F]
 
         #print("e_HG_2", e_HG_2.shape)
 
@@ -203,7 +203,8 @@ class MLPHGE(nn.Module):
         self.fc1 = nn.Linear(n_in, n_hid)
         self.fc2 = nn.Linear(n_hid, n_hid)
         self.fc3 = nn.Linear(n_hid, n_out)
-        self.bn = nn.BatchNorm1d(n_out)
+        self.bn = nn.BatchNorm1d(n_hid)
+        self.bn2 = nn.BatchNorm1d(n_out)
         self.dropout_prob = do_prob
         self.init_weights()
 
@@ -216,9 +217,12 @@ class MLPHGE(nn.Module):
                 m.weight.data.fill_(1)
                 m.bias.data.zero_()
 
-    def batch_norm(self, inputs):
+    def batch_norm(self, inputs, type):
         x = inputs.view(inputs.size(0) * inputs.size(1), -1)
-        x = self.bn(x)
+        if type == 'hidden':
+            x = self.bn(x)
+        else:
+            x = self.bn2(x)
         return x.view(inputs.size(0), inputs.size(1), -1)
 
     def forward(self, alpha_im, V_CG):
@@ -243,11 +247,11 @@ class MLPHGE(nn.Module):
         #print("weighted_nodes: ", weighted_nodes.shape)
         # Step 3: Pass through edge MLP to obtain e_HG
 
-        x = Func.elu(self.fc1(weighted_nodes))
+        x = Func.elu(self.batch_norm(self.fc1(weighted_nodes), "hidedn"))
         x = Func.dropout(x, self.dropout_prob, training=self.training)
-        x = Func.elu(self.fc2(x))
+        x = Func.elu(self.batch_norm(self.fc2(x), "hidedn"))
         x = Func.dropout(x, self.dropout_prob, training=self.training)
-        e_HG = self.fc3(x)
+        e_HG = Func.elu(self.batch_norm(self.fc3(x), "out"))
         # print(e_HG)
         return e_HG
 
@@ -354,17 +358,20 @@ class TemporalGATLayer(nn.Module):
         # Edge MLP (same for all heads)
         self.f_CG_e = nn.Sequential(
             nn.Linear(2 * self.out_dim, self.out_dim),
+            nn.BatchNorm1d(out_dim),
             nn.ReLU(),
-            nn.Linear(self.out_dim, self.out_dim)
+            nn.Linear(self.out_dim, self.out_dim),
+            nn.BatchNorm1d(out_dim),
         )
 
         # Node MLP (same for all heads)
         self.f_CG_v = nn.Sequential(
             nn.Linear(self.out_dim, hidden_dim),
+            nn.BatchNorm1d(hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim,hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, self.out_dim)
+            nn.BatchNorm1d(hidden_dim),
+
         )
 
         # Initialization
@@ -392,7 +399,7 @@ class TemporalGATLayer(nn.Module):
         D = self.out_dim
 
         # Step 2: Apply linear transformation to compute projections
-        v_proj = self.projection(v_self)# [B, N, H*out_dim]
+        v_proj = self.leaky_relu(self.projection(v_self))# [B, N, H*out_dim]
         v_proj = v_proj.view(B, N, H, D)  # [B, N, H, D]
 
         #print("v_proj shape ", v_proj.shape)
@@ -438,7 +445,7 @@ class TemporalGATLayer(nn.Module):
         weighted_v_src = alpha_ij.unsqueeze(-1) * v_src  # [B, E, H, D]
         weighted_v_tgt = alpha_ji.unsqueeze(-1) * v_tgt # [B, E, H, D]
         edge_input = torch.cat([weighted_v_src, weighted_v_tgt], dim=-1)  # [B, E, H, 2*D]
-        e_CG= self.f_CG_e(edge_input.view(B, -1, 2 * D)).view(B, -1, H, D)  # [B, E, H, D]
+        e_CG= self.leaky_relu(self.f_CG_e(edge_input.view(B *edge_input.shape[1] *H, 2 * D)).view(B, edge_input.shape[1], H, D))  # [B, E, H, D]
 
         #print("e_CG", e_CG.shape) #B, E, H, D=128
         # Step 9: Aggregate edge features back to nodes
@@ -447,7 +454,7 @@ class TemporalGATLayer(nn.Module):
         #print("edge_weighted ", edge_weighted.shape)
         v_social = torch.einsum("behd,ben->bnhd", edge_weighted, rel_rec)  # [B, N, H, D]
 
-        v_social = self.f_CG_v(v_social)
+        v_social = self.leaky_relu(self.f_CG_v(v_social.reshape(B*N*H,D))).reshape(B, N, H, D)
         #print("v_social before agg " ,v_social.shape)
         # Step 10: Combine heads
         if self.concat_heads:
@@ -467,7 +474,8 @@ class MLP(nn.Module):
         self.fc1 = nn.Linear(n_in, n_hid)
         self.fc2 = nn.Linear(n_hid, n_hid)
         self.fc3 = nn.Linear(n_hid, n_out)
-        self.bn = nn.BatchNorm1d(n_out)
+        self.bn = nn.BatchNorm1d(n_hid)
+        self.bn2 = nn.BatchNorm1d(n_out)
         self.dropout_prob = do_prob
         self.init_weights()
 
@@ -480,18 +488,21 @@ class MLP(nn.Module):
                 m.weight.data.fill_(1)
                 m.bias.data.zero_()
 
-    def batch_norm(self, inputs):
+    def batch_norm(self, inputs, type):
         x = inputs.view(inputs.size(0) * inputs.size(1), -1)
-        x = self.bn(x)
+        if type == 'hidden':
+            x = self.bn(x)
+        else:
+            x = self.bn2(x)
         return x.view(inputs.size(0), inputs.size(1), -1)
 
     def forward(self, inputs):
         #print(f'MLP forward :{inputs.shape}')
-        x = Func.elu(self.fc1(inputs))
+        x = Func.elu(self.batch_norm(self.fc1(inputs), "hidden"))
         x = Func.dropout(x, self.dropout_prob, training=self.training)
-        x = Func.elu(self.fc2(x))
+        x = Func.elu(self.batch_norm(self.fc2(x), "hidden"))
         x = Func.dropout(x, self.dropout_prob, training=self.training)
-        x = self.fc3(x)
+        x = Func.elu(self.batch_norm(self.fc3(x), "out"))
         return x
 
 

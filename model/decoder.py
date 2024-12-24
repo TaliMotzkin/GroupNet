@@ -68,18 +68,18 @@ class RNNDecoder(nn.Module):
         self.in_hyper = int(n_in_mlp/2)
 
         self.msg_fc1_g = nn.ModuleList(
-            [nn.Linear(n_in_mlp, n_hid) for _ in range(edge_types)]
+            [nn.Sequential(nn.Linear(n_in_mlp, n_hid), nn.BatchNorm1d(n_hid)) for _ in range(edge_types)]
         )
         self.msg_fc1_hg = nn.ModuleList(
-            [nn.Linear(self.in_hyper, n_hid) for _ in range(edge_types_hg)]
+            [nn.Sequential(nn.Linear(n_in_mlp, n_hid), nn.BatchNorm1d(n_hid)) for _ in range(edge_types_hg)]
         )
-        self.msg_fc2_g = nn.ModuleList([nn.Linear(n_hid, n_hid) for _ in range(edge_types)])
+        self.msg_fc2_g = nn.ModuleList( [nn.Sequential( nn.Linear(n_hid, n_hid),  nn.BatchNorm1d(n_hid)) for _ in range(edge_types)])
         self.msg_fc2_hg = nn.ModuleList(
-            [nn.Linear(n_hid, n_hid) for _ in range(edge_types_hg)]
+            [nn.Sequential( nn.Linear(n_in_mlp, n_hid),  nn.BatchNorm1d(n_hid)) for _ in range(edge_types)]
         )
 
         self.f_CG_e_l = MLP(self.n_in_mlp, self.n_hid, self.n_out)
-
+        self.relu = nn.ReLU(inplace=True)
 
 
         self.out_fc1 = nn.Linear(n_hid * 2, n_hid)
@@ -121,9 +121,9 @@ class RNNDecoder(nn.Module):
             norm = float(len(self.msg_fc2_g))
 
         for i in range(start_idx, len(self.msg_fc2_g)):#so every iteration it multiplies the message by different part of the Z, then aggreates all the results and devide it by number of edge types
-            msg = torch.tanh(self.msg_fc1_g[i](pre_msg))
+            msg = self.relu(self.msg_fc1_g[i](pre_msg))
             msg = F.dropout(msg, p=self.dropout_prob)
-            msg = torch.tanh(self.msg_fc2_g[i](msg))
+            msg = self.relu(self.msg_fc2_g[i](msg))
             msg = msg * Z_CG[:, :, i : i + 1] #the  first dimension could represent batches of data.
 
             # The second dimension - different nodes or edges. The third dimension represents different edge types?
@@ -157,9 +157,9 @@ class RNNDecoder(nn.Module):
                 norm = float(len(self.msg_fc2_hg))
 
             for i in range(start_idx, len(self.msg_fc2_hg)):
-                msg = torch.tanh(self.msg_fc1_hg[i](pre_msg))
+                msg = self.relu(self.msg_fc1_hg[i](pre_msg))
                 msg = F.dropout(msg, p=self.dropout_prob)
-                msg = torch.tanh(self.msg_fc2_hg[i](msg))
+                msg = self.relu(self.msg_fc2_hg[i](msg))
                 msg = msg * Z_HG[:, :, i : i + 1]
                 all_msgs += msg / norm
                 # print("all_msgs loop", all_msgs.shape)

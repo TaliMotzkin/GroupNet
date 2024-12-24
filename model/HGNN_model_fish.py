@@ -288,10 +288,10 @@ class HGNNModelFish(nn.Module):
             output_lists["mus"].append(mus)
             output_lists["sigmas"].append(sigmas)
 
-        L_SM = compute_smoothness_loss(Z_CG_LIST,Z_HG_LIST,0.001,0.001)
-        L_SH = sharpnessLoss(Z_CG_LIST,Z_HG_LIST,0.001,0.001)
-        L_SP = sparsity_loss(Z_CG_LIST,Z_HG_LIST,0.001,0.001, self.device)
-        L_KL = compute_kl_divergence_loss(Z_CG_LIST,Z_HG_LIST,0.001,0.001)
+        L_SM = compute_smoothness_loss(Z_CG_LIST,Z_HG_LIST,0.1,0.1)
+        L_SH = sharpnessLoss(Z_CG_LIST,Z_HG_LIST,0.1,0.1)
+        L_SP = sparsity_loss(Z_CG_LIST,Z_HG_LIST,0.1,0.1, self.device)
+        L_KL = compute_kl_divergence_loss(Z_CG_LIST,Z_HG_LIST,0.1,0.1)
 
         return output_lists,h_g, h_hg, rel_rec, rel_send, L_SM, L_SH, L_SP, L_KL
 

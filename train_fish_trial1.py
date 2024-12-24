@@ -34,7 +34,7 @@ parser.add_argument('--iternum_print', type=int, default=100)
 parser.add_argument('--ztype', default='gaussian')
 parser.add_argument('--zdim', type=int, default=32)
 parser.add_argument('--hidden_dim', type=int, default=64)
-parser.add_argument('--hyper_scales', nargs='+', type=int,default=[5,20])#todo make sure 5,11 unrelated to 11 players?
+parser.add_argument('--hyper_scales', nargs='+', type=int,default=[5,8])#todo make sure 5,11 unrelated to 11 players?
 parser.add_argument('--num_decompose', type=int, default=2)
 parser.add_argument('--min_clip', type=float, default=2.0)
 
