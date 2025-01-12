@@ -224,10 +224,10 @@ class HGNNModelFish(nn.Module):
             e_HG_2 = self.attention_hyper(e_HG, v_combined, I_HG)
 
             """ Getting the edges types"""
-            if h_g != None:
-                (edge_logits, h_g), (hyperedge_logits, h_hg) = self.gru(e_cg_2, e_HG_2, h_g, h_hg)
-            else:
-                (edge_logits, h_g), (hyperedge_logits, h_hg) = self.gru(e_cg_2,e_HG_2)
+            # if h_g != None:
+            #     (edge_logits, h_g), (hyperedge_logits, h_hg) = self.gru(e_cg_2, e_HG_2, h_g, h_hg)
+            # else:
+            (edge_logits, h_g), (hyperedge_logits, h_hg) = self.gru(e_cg_2,e_HG_2)
 
             # print("output1", output1)
             #print("edge_logits", edge_logits.shape)
