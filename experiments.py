@@ -56,7 +56,7 @@ def train( train_loader, epoch, rel_rec, rel_send, model, encoder_timesteps, rec
         past_traj = data['past_traj'].to(device)  # Shape: [batch_size, num_fish, obs_len, 2]
         future_traj = data['future_traj'].to(device)
 
-        output_lists, h_g, h_hg, rel_rec, rel_send, L_SM, L_SH, L_SP, L_KL = model(past_traj, total_pred_steps,
+        output_lists, h_g, h_hg, rel_rec1, rel_send1, L_SM, L_SH, L_SP, L_KL = model(past_traj, total_pred_steps,
                                                                                    encoder_timesteps, recompute_gap,
                                                                                    rel_rec, rel_send, tau, h_g, h_hg)
 
@@ -74,7 +74,7 @@ def train( train_loader, epoch, rel_rec, rel_send, model, encoder_timesteps, rec
         # prin("Concatenated predictions shape:", pred_trajs.shape)
         # prin("future, ", future_traj.shape)
 
-        # Compare predictions with ground truth
+        #comparing predictions with ground truth
         # L_Rec = F.mse_loss(pred_trajs, future_traj, reduction='mean')  # Mean Squared Error
         # print("Reconstruction Loss (L_Rec):", L_Rec.item())
 
@@ -94,7 +94,6 @@ def train( train_loader, epoch, rel_rec, rel_send, model, encoder_timesteps, rec
             print("L_SP", L_SP.item())
             print("L_KL", L_KL.item())
             print(iter_num, "iterations")
-        # # Update inputs for the next batch
         # if trust_predictions:
         #     inputs = torch.cat((history_inputs[:, :, -(T_h - T_p):, :], output_traj), dim=2)
         # else:
@@ -110,10 +109,11 @@ def train( train_loader, epoch, rel_rec, rel_send, model, encoder_timesteps, rec
             print(f"Elapsed time for iteration {iter_num}: {elapsed_time:.2f} seconds")
 
         total_loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
-        for name, parameter in model.named_parameters():
-            if parameter.grad is not None:
-                print(f"{name} gradient norm: {parameter.grad.norm().item()}")
+        # for name, parameter in model.named_parameters():
+        #     if parameter.grad is not None:
+        #         print(f"{name} gradient norm: {parameter.grad.norm().item()}")
         iter_num += 1
     scheduler.step()
     loss_list = [L_SM.item(), L_SH.item(), L_SP.item(), L_KL.item(), L_Rec_2.item(), total_loss.item()]
@@ -150,13 +150,13 @@ total_pred_steps=15
 M=5
 hard =False
 model_save_epoch =10
-model_save_dir = 'saved_models/nba'
+model_save_dir = 'saved_models/nba/experiments'
 """ model & optimizer """
 set_seed(42)
 
 model = HGNNModelFish(n_in, n_head,  n_out, n_hid,  M, Ledge, Lhyper,  num_cores, tau, hard,device)
 
-optimizer = optim.Adam(model.parameters(), lr=lr)
+optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
 scheduler = lr_scheduler.StepLR(optimizer, step_size=decay_step, gamma=decay_gamma)
 
 """ dataloader and others """

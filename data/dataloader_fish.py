@@ -28,9 +28,9 @@ class FISHDataset(Dataset):
         self.seq_len = self.obs_len + self.pred_len
 
         if training:
-            data_root = 'datasets/fish/fish/train3.npy'
+            data_root = 'datasets/fish/fish/train4.npy'
         else:
-            data_root = 'datasets/fish/fish/test3.npy'
+            data_root = 'datasets/fish/fish/test4.npy'
 
         self.trajs = np.load(data_root)
 

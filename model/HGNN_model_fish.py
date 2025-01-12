@@ -128,10 +128,10 @@ class HGNNModelFish(nn.Module):
         e_HG_2 = self.attention_hyper(e_HG, v_combined, I_HG)
 
         """ Getting the edges types"""
-        if h_g != None:
-            (edge_logits, h_g), (hyperedge_logits, h_hg) = self.gru(e_cg_2, e_HG_2, h_g, h_hg)
-        else:
-            (edge_logits, h_g), (hyperedge_logits, h_hg) = self.gru(e_cg_2,e_HG_2)
+        # if h_g != None:
+        #     (edge_logits, h_g), (hyperedge_logits, h_hg) = self.gru(e_cg_2, e_HG_2, h_g, h_hg)
+        # else:
+        (edge_logits, h_g), (hyperedge_logits, h_hg) = self.gru(e_cg_2,e_HG_2)
 
         # print("output1", output1)
         #print("edge_logits", edge_logits.shape)
@@ -141,7 +141,7 @@ class HGNNModelFish(nn.Module):
         z_HG = gumbel_softmax(hyperedge_logits, tau=tau, dim=-1, hard=False)
         # print("Edge type probabilities (z_CG):", z_CG)  # [B, E, F]
         #print("Hyperedge type probabilities (z_HG):", z_HG.shape)  # [B, M, F]
-        #print("z_CG", z_CG.shape)
+        # print("z_CG", z_CG)
 
         Z_CG_LIST = [z_CG]
         Z_HG_LIST = [z_HG]

@@ -66,20 +66,16 @@ class RNNDecoder(nn.Module):
         self.msg_out_shape = n_hid
         self.skip_first_edge_type = skip_first
         self.in_hyper = int(n_in_mlp/2)
+        # print('n_in_mlp', n_in_mlp)
+        self.shortcut = nn.Linear(self.n_in_mlp, self.msg_out_shape) if self.n_in_mlp != self.msg_out_shape else nn.Identity()
 
-        self.msg_fc1_g = nn.ModuleList(
-            [nn.Sequential(nn.Linear(n_in_mlp, n_hid), nn.BatchNorm1d(n_hid)) for _ in range(edge_types)]
-        )
-        self.msg_fc1_hg = nn.ModuleList(
-            [nn.Sequential(nn.Linear(n_in_mlp, n_hid), nn.BatchNorm1d(n_hid)) for _ in range(edge_types_hg)]
-        )
-        self.msg_fc2_g = nn.ModuleList( [nn.Sequential( nn.Linear(n_hid, n_hid),  nn.BatchNorm1d(n_hid)) for _ in range(edge_types)])
-        self.msg_fc2_hg = nn.ModuleList(
-            [nn.Sequential( nn.Linear(n_in_mlp, n_hid),  nn.BatchNorm1d(n_hid)) for _ in range(edge_types)]
-        )
+        self.msg_fc1_g =nn.Sequential(nn.Linear(n_in_mlp, n_hid), nn.BatchNorm1d(n_hid))
+        self.msg_fc1_hg = nn.Sequential(nn.Linear(self.in_hyper, n_hid), nn.BatchNorm1d(n_hid))
+        self.msg_fc2_g = nn.Sequential( nn.Linear(n_hid, n_hid),  nn.BatchNorm1d(n_hid))
+        self.msg_fc2_hg = nn.Sequential( nn.Linear(n_hid, n_hid),  nn.BatchNorm1d(n_hid))
 
         self.f_CG_e_l = MLP(self.n_in_mlp, self.n_hid, self.n_out)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.LeakyReLU(negative_slope=0.01)
 
 
         self.out_fc1 = nn.Linear(n_hid * 2, n_hid)
@@ -107,6 +103,7 @@ class RNNDecoder(nn.Module):
         senders = torch.matmul(rel_send_g, v_combined)
         pre_msg = torch.cat([receivers, senders], dim=-1) #preliminary messages #B, E, 2*H (H=n_hid+n_out)
         # print("pre_msg", pre_msg.shape)
+        B, E, H = pre_msg.shape
         all_msgs = torch.zeros(pre_msg.size()[0], pre_msg.size()[1], self.n_hid)#tensor all_msgs to accumulate messages after processing
         # print("all_msgs1", all_msgs.shape)
 
@@ -120,14 +117,23 @@ class RNNDecoder(nn.Module):
             start_idx = 0
             norm = float(len(self.msg_fc2_g))
 
-        for i in range(start_idx, len(self.msg_fc2_g)):#so every iteration it multiplies the message by different part of the Z, then aggreates all the results and devide it by number of edge types
-            msg = self.relu(self.msg_fc1_g[i](pre_msg))
-            msg = F.dropout(msg, p=self.dropout_prob)
-            msg = self.relu(self.msg_fc2_g[i](msg))
-            msg = msg * Z_CG[:, :, i : i + 1] #the  first dimension could represent batches of data.
+        # print(i)
+        shortcut = self.shortcut(pre_msg)
+        # print("shortcut", shortcut.shape)
+        new_pre = pre_msg.flatten(start_dim=0, end_dim=1)
+        # print("pre_msg", new_pre.shape)
+        msg = self.relu(self.msg_fc1_g(new_pre))
+        msg = F.dropout(msg, p=self.dropout_prob)
+        msg = self.relu(self.msg_fc2_g(msg))
+        msg = msg.view(B, E, self.n_hid)
+        # print("msg", msg.shape)
+        Z_CG = Z_CG.unsqueeze(-1).expand(-1, -1, -1, self.n_hid).permute(0, 1, 3, 2)
+        all_msgs = self.relu((msg.unsqueeze(-1) * Z_CG).mean(dim=-1)  + shortcut) #the  first dimension could represent batches of data.
 
-            # The second dimension - different nodes or edges. The third dimension represents different edge types?
-            all_msgs += msg / norm #all masseges are e_CG_ij
+        # all_msgs = msg * Z_CG[:, :, i : i + 1] #the  first dimension could represent batches of data.
+
+        # The second dimension - different nodes or edges. The third dimension represents different edge types?
+            # all_msgs += msg / norm #all masseges are e_CG_ij
         # print("all_msgs", all_msgs.shape, rel_send_g.shape)
         # print("msg", msg.shape)
 
@@ -144,6 +150,7 @@ class RNNDecoder(nn.Module):
         if not pre_train: #same as for the G!
             pre_msg = torch.einsum('bnm,bnf->bmf', I_HG, v_combined)  # Aggregate nodes to hyperedges
             # print("pre_msg hg" , pre_msg.shape)
+            B_hg , E_hg, F_hg = pre_msg.shape
 
             all_msgs =  torch.zeros(pre_msg.size(0), pre_msg.size(1), self.msg_out_shape)
             if inputs.is_cuda:
@@ -156,12 +163,18 @@ class RNNDecoder(nn.Module):
                 start_idx = 0
                 norm = float(len(self.msg_fc2_hg))
 
-            for i in range(start_idx, len(self.msg_fc2_hg)):
-                msg = self.relu(self.msg_fc1_hg[i](pre_msg))
-                msg = F.dropout(msg, p=self.dropout_prob)
-                msg = self.relu(self.msg_fc2_hg[i](msg))
-                msg = msg * Z_HG[:, :, i : i + 1]
-                all_msgs += msg / norm
+
+            # print("pre_msg", pre_msg.shape)
+            new_pre = pre_msg.flatten(start_dim=0, end_dim=1)
+            # print(new_pre.shape, "new_pre")
+            msg = self.relu(self.msg_fc1_hg(new_pre))
+            msg = F.dropout(msg, p=self.dropout_prob)
+            msg = self.relu(self.msg_fc2_hg(msg))
+            msg = msg.view(B_hg , E_hg,  self.n_hid)
+            # print("msg", msg.shape)
+            Z_HG = Z_HG.unsqueeze(-1).expand(-1, -1, -1, self.n_hid).permute(0, 1, 3, 2)
+            all_msgs = (msg.unsqueeze(-1) * Z_HG).mean(dim=-1)
+
                 # print("all_msgs loop", all_msgs.shape)
                 # print("msg", msg.shape)
 
@@ -174,7 +187,7 @@ class RNNDecoder(nn.Module):
 
 
         v = F.dropout(
-            F.relu(self.out_fc1(torch.cat((hidden_g, hidden_hg), dim=-1))),
+            self.relu(self.out_fc1(torch.cat((hidden_g, hidden_hg), dim=-1))),
             p=self.dropout_prob,)
 
         # v = F.dropout(F.relu(self.out_fc2(v)), p=self.dropout_prob)

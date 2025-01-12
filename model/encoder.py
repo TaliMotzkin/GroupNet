@@ -69,14 +69,14 @@ class RelationTypeInference(nn.Module):
         # MLPs for edge logits
         self.edge_mlp = nn.Sequential(
             nn.Linear(edge_input_dim, edge_input_dim),
-            nn.ReLU(),
+            nn.LeakyReLU(negative_slope=0.01),
             nn.Linear(edge_input_dim, num_edge_types)  # Output logits for edge types
         )
 
         # MLPs for hyperedge logits
         self.hyperedge_mlp = nn.Sequential(
             nn.Linear(hyperedge_input_dim, hyperedge_input_dim),
-            nn.ReLU(),
+            nn.LeakyReLU(negative_slope=0.01),
             nn.Linear(hyperedge_input_dim, num_hyperedge_types)  # Output logits for hyperedge types
         )
 
@@ -124,7 +124,7 @@ class HyperEdgeAttention(nn.Module):
         self.f_HG_v = nn.Sequential(
             nn.Linear(input_dim_e, hidden_dim),
             nn.BatchNorm1d(hidden_dim),
-            nn.ReLU(),
+            nn.LeakyReLU(negative_slope=0.01),
             nn.Linear(hidden_dim, node_dim),
             nn.BatchNorm1d(node_dim),
         )
@@ -132,7 +132,7 @@ class HyperEdgeAttention(nn.Module):
         self.f_HG_2 = nn.Sequential(
             nn.Linear(node_dim, hidden_dim),
             nn.BatchNorm1d(hidden_dim),
-            nn.ReLU(),
+            nn.LeakyReLU(negative_slope=0.01),
             nn.Linear(hidden_dim, node_dim),
             nn.BatchNorm1d(node_dim)
         )
@@ -247,9 +247,9 @@ class MLPHGE(nn.Module):
         #print("weighted_nodes: ", weighted_nodes.shape)
         # Step 3: Pass through edge MLP to obtain e_HG
 
-        x = Func.elu(self.batch_norm(self.fc1(weighted_nodes), "hidedn"))
+        x = Func.elu(self.batch_norm(self.fc1(weighted_nodes), "hidden"))
         x = Func.dropout(x, self.dropout_prob, training=self.training)
-        x = Func.elu(self.batch_norm(self.fc2(x), "hidedn"))
+        x = Func.elu(self.batch_norm(self.fc2(x), "hidden"))
         x = Func.dropout(x, self.dropout_prob, training=self.training)
         e_HG = Func.elu(self.batch_norm(self.fc3(x), "out"))
         # print(e_HG)
@@ -320,7 +320,7 @@ class MLP_fPIM(nn.Module):
         super(MLP_fPIM, self).__init__()
         self.net = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
-            nn.ReLU(),
+            nn.LeakyReLU(negative_slope=0.01),
             nn.Linear(hidden_dim, output_dim)  # Output dimension: Number of hyperedges M
         )
 
@@ -359,7 +359,7 @@ class TemporalGATLayer(nn.Module):
         self.f_CG_e = nn.Sequential(
             nn.Linear(2 * self.out_dim, self.out_dim),
             nn.BatchNorm1d(out_dim),
-            nn.ReLU(),
+            nn.LeakyReLU(negative_slope=0.01),
             nn.Linear(self.out_dim, self.out_dim),
             nn.BatchNorm1d(out_dim),
         )
@@ -368,7 +368,7 @@ class TemporalGATLayer(nn.Module):
         self.f_CG_v = nn.Sequential(
             nn.Linear(self.out_dim, hidden_dim),
             nn.BatchNorm1d(hidden_dim),
-            nn.ReLU(),
+            nn.LeakyReLU(negative_slope=0.01),
             nn.Linear(hidden_dim,hidden_dim),
             nn.BatchNorm1d(hidden_dim),
 
