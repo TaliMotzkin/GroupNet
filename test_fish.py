@@ -105,9 +105,9 @@ def draw_result(future, past, mode='pre'):
         plt.imshow(court, zorder=0, extent=[Constant.X_MIN, Constant.X_MAX - Constant.DIFF,
                                             Constant.Y_MAX, Constant.Y_MIN], alpha=0.5)
         if mode == 'pre':
-            plt.savefig('vis/nba/' + str(idx) + 'pre.png')
+            plt.savefig('vis/nba/experiments' + str(idx) + 'pre.png')
         else:
-            plt.savefig('vis/nba/' + str(idx) + 'gt.png')
+            plt.savefig('vis/nba/experiments' + str(idx) + 'gt.png')
     print('ok')
     return
 
@@ -276,7 +276,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=1)
     parser.add_argument('--model_names', default=None)
     parser.add_argument('--gpu', type=int, default=0)
-    parser.add_argument('--model_save_dir', default='saved_models/nba')
+    parser.add_argument('--model_save_dir', default='saved_models/nba/experiments')
     parser.add_argument('--vis', action='store_true', default=True)
     parser.add_argument('--traj_scale', type=int, default=1)
     parser.add_argument('--sample_k', type=int, default=20)
@@ -324,15 +324,15 @@ if __name__ == '__main__':
         """ args """
 
         n_in = 10
-        num_epochs = 10
+        num_epochs = 4
         n_hid = 128
         n_out = 5
         tau = 1
         n_head = 1
         do_prob = 0.2  # todo check this
-        Ledge = 30
-        Lhyper = 10
-        num_cores = 5
+        Ledge = 3
+        Lhyper = 3
+        num_cores = 3
         encoder_timesteps = 5
         recompute_gap = 5
         total_pred_steps = 15

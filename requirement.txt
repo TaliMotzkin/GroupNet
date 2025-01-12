@@ -51,7 +51,6 @@ scikit-learn==0.24.2
 scipy==1.5.4
 seaborn==0.11.2
 six==1.16.0
-sklearn==0.0
 soupsieve==2.3.1
 tensorboard==2.8.0
 tensorboard-data-server==0.6.1
