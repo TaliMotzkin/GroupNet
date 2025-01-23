@@ -370,8 +370,10 @@ dataset = FishTrajectoryDataset3(file_path_30 ,file_path_25,file_path_35, True)
 all_trajs = dataset.get_trajectories()
 print(len(all_trajs))
 index = list(range(len(all_trajs)))
-# from random import shuffle
-# shuffle(index)
+import random
+from random import shuffle
+random.seed(0)
+shuffle(index)
 train_set = all_trajs[index[:9023]]
 test_set = all_trajs[index[9023:]]
 print('train num:',train_set.shape[0])

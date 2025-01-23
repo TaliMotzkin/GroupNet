@@ -13,6 +13,8 @@ from data.dataloader_fish import FISHDataset, seq_collate
 from data.dataloader_nba import NBADataset
 from model.GroupNet_nba import GroupNet
 import math
+import matplotlib.pyplot as plt
+
 
 torch.backends.cudnn.enabled = True
 torch.backends.cudnn.deterministic = True
@@ -30,7 +32,7 @@ parser.add_argument('--sample_k', type=int, default=20)
 parser.add_argument('--num_epochs', type=int, default=2)
 parser.add_argument('--decay_step', type=int, default=10)
 parser.add_argument('--decay_gamma', type=float, default=0.5)
-parser.add_argument('--iternum_print', type=int, default=10)
+parser.add_argument('--iternum_print', type=int, default=50)
 
 parser.add_argument('--ztype', default='gaussian')
 parser.add_argument('--zdim', type=int, default=32)
@@ -39,7 +41,7 @@ parser.add_argument('--hyper_scales', nargs='+', type=int,default=[5,8])#todo ma
 parser.add_argument('--num_decompose', type=int, default=2)
 parser.add_argument('--min_clip', type=float, default=2.0)
 
-parser.add_argument('--model_save_dir', default='saved_models/fish3')
+parser.add_argument('--model_save_dir', default='saved_models/fish_overlap')
 parser.add_argument('--model_save_epoch', type=int, default=2)
 
 parser.add_argument('--epoch_continue', type=int, default=0)
@@ -58,10 +60,28 @@ if torch.cuda.is_available():
 print('device:',device)
 print(args)
 
+
+def validate(validation_loader):
+    model.eval()
+    total_val_loss = 0
+    iter = 0
+    with torch.no_grad():
+        for data in validation_loader:
+            total_loss,loss_pred,loss_recover,loss_kl,loss_diverse = model(data)
+            total_val_loss += total_loss.item()
+            iter += 1
+
+    avg_val_loss = total_val_loss / iter
+    print(f'total avg validation Loss: {avg_val_loss:.3f}')
+    print("other val losses: loss pred" , loss_pred,"loss recover ", loss_recover,"loss kl " , loss_kl,"loss diverse ", loss_diverse)
+    return avg_val_loss
+
 def train(train_loader,epoch):
     model.train()
     total_iter_num = len(train_loader)
     iter_num = 0
+    avg_loss = 0
+    all_loss = 0
     for data in train_loader:
         total_loss,loss_pred,loss_recover,loss_kl,loss_diverse = model(data)
         """ optimize """
@@ -73,10 +93,29 @@ def train(train_loader,epoch):
             print('Epochs: {:02d}/{:02d}| It: {:04d}/{:04d} | Total loss: {:03f}| Loss_pred: {:03f}| Loss_recover: {:03f}| Loss_kl: {:03f}| Loss_diverse: {:03f}'
             .format(epoch,args.num_epochs,iter_num,total_iter_num,total_loss.item(),loss_pred,loss_recover,loss_kl,loss_diverse))
         iter_num += 1
+        all_loss += total_loss.item()
 
+    validate_loss = validate(validation_loader)
     scheduler.step()
     model.step_annealer()
+    avg_loss = all_loss / iter_num
+    return avg_loss, validate_loss
 
+def ploting_losses(train_loss,valid_loss, file_path = None):
+    plt.figure(figsize=(10, 5))
+    plt.plot(train_loss, label='Training Loss', color='blue')
+    plt.plot(valid_loss, label='Validation Loss', color='red')
+    plt.title('Training and Validation Losses')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    if file_path:
+        plt.savefig(file_path)
+        plt.close()
+    else:
+        plt.show()
 
 """ model & optimizer """
 model = GroupNet(args,device)
@@ -98,6 +137,22 @@ train_loader = DataLoader(
     collate_fn=seq_collate,
     pin_memory=True)
 
+validation_set = FISHDataset(
+    obs_len=args.past_length,
+    pred_len=args.future_length,
+    training=False,
+    use_validation=True, validation_split=0.1
+)
+
+validation_loader = DataLoader(
+    validation_set,
+    batch_size=args.batch_size,
+    shuffle=False,
+    num_workers=0,
+    collate_fn=seq_collate,
+    pin_memory=True
+)
+
 """ Loading if needed """
 if args.epoch_continue > 0:
     checkpoint_path = os.path.join(args.model_save_dir,str(args.epoch_continue)+'.p')
@@ -111,13 +166,19 @@ if args.epoch_continue > 0:
 
 """ start training """
 model.set_device(device)
+
+avg_validate_losses = []
+avg_train_losses = []
 for epoch in range(args.epoch_continue, args.num_epochs):
-    train(train_loader,epoch)
+    avg_loss, validate_loss = train(train_loader,epoch)
+    avg_validate_losses.append(validate_loss)
+    avg_train_losses.append(avg_loss)
+
     """ save model """
     if  (epoch + 1) % args.model_save_epoch == 0:
         model_saved = {'model_dict': model.state_dict(), 'optimizer': optimizer.state_dict(), 'scheduler': scheduler.state_dict(), 'epoch': epoch + 1,'model_cfg': args}
         saved_path = os.path.join(args.model_save_dir,str(epoch+1)+'.p')
         torch.save(model_saved, saved_path)
 
-
+ploting_losses(avg_train_losses, avg_validate_losses, 'training_validation_loss.png')
 

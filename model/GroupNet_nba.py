@@ -90,8 +90,8 @@ class Normal:
         self.sigma = torch.exp(0.5 * self.logvar)
 
     def rsample(self):
-        eps = torch.randn_like(self.sigma)
-        return self.mu + eps * self.sigma
+        eps = torch.randn_like(self.sigma) # generates a tensor of random numbers drawn from a standard normal distribution
+        return self.mu + eps * self.sigma #e performs the reparameterization trick, where the sample from the distribution is obtained by scaling the random nois
 
     def sample(self):
         return self.rsample()
@@ -234,9 +234,12 @@ class PastEncoder(nn.Module):
         B = x.shape[0]
         N = x.shape[1]
         category = torch.zeros(N,3).type_as(x)
-        category[0:4,0] = 1
+        category[0:4,0] = 1 #todo
         category[4:7,1] = 1
         category[7,2] = 1
+        # category[0:5, 0] = 1
+        # category[5:10, 1] = 1
+        # category[10, 2] = 1
         category = category.repeat(B,1,1)
         x = torch.cat((x,category),dim=-1)
         return x
@@ -257,7 +260,7 @@ class PastEncoder(nn.Module):
 
         # print("past encoder ftraj_input: ", ftraj_input.shape) #32., 20, 64
 
-        query_input = F.normalize(ftraj_input,p=2,dim=2)
+        query_input = F.normalize(ftraj_input,p=2,dim=2) #use L2 norm, dim 2
         feat_corr = torch.matmul(query_input,query_input.permute(0,2,1)) #[B, N, N] #todo understand this meaning of permute?
 
         # print("past encoder feat_corr: ", feat_corr.shape)
@@ -352,6 +355,9 @@ class FutureEncoder(nn.Module):
         category[0:4,0] = 1 #todo changed here the categories by players
         category[4:7,1] = 1
         category[7,2] = 1
+        # category[0:5, 0] = 1
+        # category[5:10, 1] = 1
+        # category[10, 2] = 1
         category = category.repeat(B,1,1)
         x = torch.cat((x,category),dim=-1)
         return x
@@ -430,7 +436,7 @@ class Decoder(nn.Module):
 
         z_in = z.view(-1, sample_num, z.shape[-1])
 
-        # print("z_in decoder ", z_in.shape) #640,1,32
+        # print("z_in decoder ", z_in.shape) #640,20,32
 
         hidden = torch.cat((past_feature,z_in),dim=-1)
         # print("hidden decoder", hidden.shape) #640, 1, 256+32=288
@@ -459,9 +465,25 @@ class Decoder(nn.Module):
         cur_location_repeat = cur_location.repeat_interleave(sample_num, dim=0)
         out_seq = norm_seq + cur_location_repeat # (agent_num*sample_num,self.past_length,2)
         if mode == 'inference':
-            out_seq = out_seq.view(-1,sample_num,*out_seq.shape[1:]) # (agent_num,sample_num,self.past_length,2)
+            out_seq = out_seq.view(-1,sample_num,*out_seq.shape[1:]) # (agent_num*B,sample_num,self.past_length,2)
         return out_seq,recover_pre_seq
-        
+
+class TrajectoryClassifier(nn.Module):
+    def __init__(self, T, coords, hidden_size, num_samples):
+        super(TrajectoryClassifier, self).__init__()
+        input_size = T * coords  # Flatten T and coords
+        self.fc1 = nn.Linear(input_size, hidden_size)
+        self.fc2 = nn.Linear(hidden_size, 1)
+
+    def forward(self, x):
+        # x shape: [B*N, samples, T, 2]
+        B_N, samples, T, coords = x.size()
+        x = x.view(-1, T * coords) # [B*N*samples, T*coords]
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        x = x.view(B_N, samples)  #  [B*N, samples], one score per sample
+        return F.softmax(x, dim=1)
+
 class GroupNet(nn.Module):
     def __init__(self, args, device):
         super().__init__()
@@ -479,6 +501,7 @@ class GroupNet(nn.Module):
         self.future_encoder = FutureEncoder(args)
         self.decoder = Decoder(args)
         self.param_annealers = nn.ModuleList()
+        self.final_model = TrajectoryClassifier(args.future_length, 2,self.args.hidden_dim, self.args.sample_k)
 
     def set_device(self, device):
         self.device = device
@@ -504,10 +527,36 @@ class GroupNet(nn.Module):
         return loss
     
     def calculate_loss_diverse(self,pred,target,batch_size):
-        diff = target.unsqueeze(1) - pred
+        diff = target.unsqueeze(1) - pred #future - 20 samples
         avg_dist = diff.pow(2).sum(dim=-1).sum(dim=-1)
         loss = avg_dist.min(dim=1)[0]
         loss = loss.mean() 
+        return loss
+
+    def calculate_softmax_loss(self, pred, target, model_output):
+        # Calculate squared Euclidean distances
+        # pred shape: [B*N, S, T, 2]
+        # target shape: [B*N, T, 2]
+        target_expanded = target.unsqueeze(1).expand_as(pred)  # [B*N, S, T, 2]
+        # print(target_expanded)
+        diff = pred - target_expanded  # Difference
+        # print("diff", diff)
+        dist_squared = diff.pow(2).sum(dim=-1).sum(dim=-1)  # Sum squared differences across T and 2 dimensions
+        # print("dist_squared", dist_squared)
+        # scores = -dist_squared
+        # probabilities = F.softmax(scores, dim=1)
+
+        probabilities = model_output
+        # print("probabilities", probabilities)
+        _, closest_idx = dist_squared.min(dim=1)
+        # closest_idx = torch.tensor([2,2,2])
+        # print(closest_idx, "closest_idx")
+        # true_indices = torch.zeros_like(probabilities).scatter_(1, closest_idx.unsqueeze(1), 1)
+        # print("true_indices", true_indices)
+        nll_loss = nn.NLLLoss()
+        log_probabilities = probabilities.log()
+        loss = nll_loss(log_probabilities, closest_idx)
+        # print("loss", loss)
         return loss
 
     def forward(self,data):
@@ -591,11 +640,13 @@ class GroupNet(nn.Module):
 
         diverse_pred_traj,_ = self.decoder(past_feature_repeat,pz_sampled,batch_size,agent_num,past_traj,cur_location,sample_num=20,mode='inference')
 
-        # print("diverse_pred_traj main ", diverse_pred_traj.shape) #640,20,10,2
-        loss_diverse = self.calculate_loss_diverse(diverse_pred_traj,future_traj,batch_size)
-        total_loss = loss_pred + loss_recover + loss_kl+ loss_diverse
+        outputs_softmax = self.final_model(diverse_pred_traj)
+        # print("diverse_pred_traj main ", diverse_pred_traj.shape) #640,20,10,2 =>32*20, 20, 10, 2
+        loss_diverse = self.calculate_loss_diverse(diverse_pred_traj,future_traj,batch_size) #future - 32*20, T, 2
+        loss_true = self.calculate_softmax_loss(diverse_pred_traj,future_traj, outputs_softmax)
+        total_loss = loss_pred + loss_recover + loss_kl+ loss_true
 
-        return total_loss, loss_pred.item(), loss_recover.item(), loss_kl.item(), loss_diverse.item()
+        return total_loss, loss_pred.item(), loss_recover.item(), loss_kl.item(), loss_true.item()
 
     def step_annealer(self):
         for anl in self.param_annealers:
@@ -636,6 +687,49 @@ class GroupNet(nn.Module):
         pz_sampled = pz_distribution.rsample()
         z = pz_sampled
 
-        diverse_pred_traj,_ = self.decoder(past_feature_repeat,z,batch_size,agent_num,past_traj,cur_location,sample_num=self.args.sample_k,mode='inference')
+        diverse_pred_traj,_ = self.decoder(past_feature_repeat,z,batch_size,agent_num,past_traj,cur_location,sample_num=self.args.sample_k,mode='inference') #Z in the decodng
+
+        outputs_softmax = self.final_model(diverse_pred_traj)
         diverse_pred_traj = diverse_pred_traj.permute(1,0,2,3)
+        return diverse_pred_traj, outputs_softmax
+
+    def inference_simulator(self, data):
+        device = self.device
+        batch_size = data.shape[0]
+        agent_num = data.shape[1]
+
+        past_traj = data.view(batch_size * agent_num, self.args.past_length, 2).to(device).contiguous()
+
+        past_vel = past_traj[:, 1:] - past_traj[:, :-1, :]
+        past_vel = torch.cat([past_vel[:, [0]], past_vel], dim=1)
+
+        cur_location = past_traj[:, [-1]]
+
+        inputs = torch.cat((past_traj, past_vel), dim=-1)
+
+        past_feature = self.past_encoder(inputs, batch_size, agent_num)
+
+        sample_num = 20
+        if self.args.learn_prior:
+            past_feature_repeat = past_feature.repeat_interleave(sample_num, dim=0)
+            p_z_params = self.pz_layer(past_feature_repeat)
+            if self.args.ztype == 'gaussian':
+                pz_distribution = Normal(params=p_z_params)
+            else:
+                ValueError('Unknown hidden distribution!')
+        else:
+            past_feature_repeat = past_feature.repeat_interleave(sample_num, dim=0)
+            if self.args.ztype == 'gaussian':
+                pz_distribution = Normal(
+                    mu=torch.zeros(past_feature_repeat.shape[0], self.args.zdim).to(past_traj.device),
+                    logvar=torch.zeros(past_feature_repeat.shape[0], self.args.zdim).to(past_traj.device))
+            else:
+                ValueError('Unknown hidden distribution!')
+
+        pz_sampled = pz_distribution.rsample()
+        z = pz_sampled
+
+        diverse_pred_traj, _ = self.decoder(past_feature_repeat, z, batch_size, agent_num, past_traj, cur_location,
+                                            sample_num=self.args.sample_k, mode='inference')  # Z in the decodng
+        diverse_pred_traj = diverse_pred_traj.permute(1, 0, 2, 3)
         return diverse_pred_traj

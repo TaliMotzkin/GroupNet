@@ -29,7 +29,7 @@ def make_mlp(dim_list, activation='relu', batch_norm=True, dropout=0):
     return nn.Sequential(*layers)
 
 class MLP_dict_softmax(nn.Module):
-    def __init__(self, input_dim, output_dim, hidden_size=(1024, 512), activation='relu', discrim=False, dropout=-1,edge_types=5):
+    def __init__(self, input_dim, output_dim, hidden_size=(1024, 512), activation='relu', discrim=False, dropout=-1,edge_types=5): #interaction category = edge types??
         super(MLP_dict_softmax, self).__init__()
         self.bottleneck_dim = edge_types
         self.MLP_distribution = MLP(input_dim = input_dim, output_dim = self.bottleneck_dim, hidden_size=hidden_size)
@@ -42,9 +42,9 @@ class MLP_dict_softmax(nn.Module):
         # print("MLP dict softmax x before MLP dist ", x.shape)
         x = self.init_MLP(x)
         # print("MLP dict softmax x after MLP dist ", self.MLP_distribution(x).shape)
-        distribution = gumbel_softmax(self.MLP_distribution(x),tau=1/2, hard=False)
+        distribution = gumbel_softmax(self.MLP_distribution(x),tau=1/2, hard=False) #ci
         # embed = self.dict_layer(distribution)
-        factor = torch.sigmoid(self.MLP_factor(x))
+        factor = torch.sigmoid(self.MLP_factor(x)) #strength r?
         # print("factor size ", factor.shape) #32, 400, 1
         # factor = 1
         out = factor * distribution
@@ -71,7 +71,7 @@ class MS_HGNN_oridinary(nn.Module):
 
         hdim_extend = 64
         self.hdim_extend = hdim_extend
-        self.edge_types = 5 #todo make sure if i want to keep it 6 as it represents the factor number - some features related to the 400 edges?..
+        self.edge_types = 5 #todo make sure if i want to keep it 6 (5 changed) as it represents the factor number - some features related to the 400 edges?..
         self.nmp_mlp_start = MLP_dict_softmax(input_dim = hdim_extend, output_dim = h_dim, hidden_size=(128,),edge_types=self.edge_types)
         self.nmp_mlps = self.make_nmp_mlp()
         self.nmp_mlp_end = MLP(input_dim = h_dim*2, output_dim = bottleneck_dim, hidden_size=(128,))
@@ -270,7 +270,7 @@ class MS_HGNN_hyper(nn.Module):
     def __init__(
         self, embedding_dim=64, h_dim=64, mlp_dim=1024, bottleneck_dim=1024,
         activation='relu', batch_norm=True, dropout=0.0, nmp_layers=4, scale=2, vis=False, actor_number=8
-    ):
+    ): #todo changed here number of players
         super(MS_HGNN_hyper, self).__init__()
 
         self.mlp_dim = mlp_dim
@@ -289,7 +289,7 @@ class MS_HGNN_hyper(nn.Module):
         self.spatial_transform = nn.Linear(h_dim,h_dim)
         hdim_extend = 64
         self.hdim_extend = hdim_extend
-        self.edge_types = 5 #todo make sure we want this size
+        self.edge_types = 5 #todo make sure we want this size 10->5
 
         self.nmp_mlp_start = MLP_dict_softmax(input_dim=hdim_extend, output_dim=h_dim, hidden_size=(128,),edge_types=self.edge_types)
         self.nmp_mlps = self.make_nmp_mlp()
@@ -317,9 +317,9 @@ class MS_HGNN_hyper(nn.Module):
                     tensor_a = torch.cat((tensor_a[0:i],tensor_a[i+1:]),dim=0) #all indx except of i's
                     padding = (1,0,0,0)
                     all_comb = F.pad(torch.combinations(tensor_a,r=group_size-1),padding,value=i) #generate all combinations of group sized, if 3 -> [1,2,4]....
-                    all_combs.append(all_comb[None,:,:])#A tensor of shape (C, group_size) containing all combinations of group_size actors, including actor i
+                    all_combs.append(all_comb[None,:,:])## A tensor of shape (1, C, group_size) containing all combinations of group_size actors, including actor i, starting from number i
                 self.all_combs = torch.cat(all_combs,dim=0)
-                self.all_combs = self.all_combs
+                self.all_combs = self.all_combs # N, numb_comb, group size
                 # print("all_combs.shape",self.all_combs.shape)
 
     def make_nmp_mlp(self):
@@ -386,25 +386,25 @@ class MS_HGNN_hyper(nn.Module):
     def init_adj_attention_listall(self, feat,feat_corr, scale_factor=2):
         batch = feat.shape[0] #32
         actor_number = feat.shape[1]#20
-        if scale_factor == actor_number:
+        if scale_factor == actor_number: #if all agents have the scale of their size so we can have inly 1 edge..
             H_matrix = torch.ones(batch,1,actor_number).type_as(feat)
             return H_matrix
         group_size = scale_factor
         if group_size < 1:
             group_size = 1
 
-        #Builds an adjacency matrix based on all combinations of actor correlations.
-        all_indice = self.all_combs.clone() #(N,C,m) (actor_number, C, group_size)
-        all_indice = all_indice[None,:,:,:].repeat(batch,1,1,1)
-        all_matrix = feat_corr[:,None,None,:,:].repeat(1,actor_number,all_indice.shape[2],1,1)
-        all_matrix = torch.gather(all_matrix,3,all_indice[:,:,:,:,None].repeat(1,1,1,1,actor_number))
-        all_matrix = torch.gather(all_matrix,4,all_indice[:,:,:,None,:].repeat(1,1,1,group_size,1))
-        score = torch.sum(all_matrix,dim=(3,4),keepdim=False)
+        #Builds an incidence matrix based on all combinations of actor correlations.
+        all_indice = self.all_combs.clone() #(N,C,m) (actor_number, C, group_size = scale)
+        all_indice = all_indice[None,:,:,:].repeat(batch,1,1,1) # 32, N, C, s
+        all_matrix = feat_corr[:,None,None,:,:].repeat(1,actor_number,all_indice.shape[2],1,1) #added two more dims; B, N, C, N, N
+        all_matrix = torch.gather(all_matrix,3,all_indice[:,:,:,:,None].repeat(1,1,1,1,actor_number)) #gather by indeces: B, N, C, s, N
+        all_matrix = torch.gather(all_matrix,4,all_indice[:,:,:,None,:].repeat(1,1,1,group_size,1)) # 32, N, C, s, s
+        score = torch.sum(all_matrix,dim=(3,4),keepdim=False) #32, N, C (sums)
         _,max_idx = torch.max(score,dim=2)#coses the best combination!
-        indice = torch.gather(all_indice,2,max_idx[:,:,None,None].repeat(1,1,1,group_size))[:,:,0,:]
+        indice = torch.gather(all_indice,2,max_idx[:,:,None,None].repeat(1,1,1,group_size))[:,:,0,:] #from all indeces chosing the max one from C, #B, N, s
 
         H_matrix = torch.zeros(batch,actor_number,actor_number).type_as(feat)
-        H_matrix = H_matrix.scatter(2,indice,1)
+        H_matrix = H_matrix.scatter(2,indice,1) #setting values along dim 2 (the second N, like choosing a row), and will place the value 1 in the indices in ech row
         # print("H_matrix tall ", H_matrix.shape) #32, 20, 20
 
         return H_matrix

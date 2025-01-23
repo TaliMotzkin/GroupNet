@@ -20,7 +20,7 @@ def seq_collate(data):
 class FISHDataset(Dataset):
     """Dataloder for the Trajectory datasets"""
     def __init__(
-        self, obs_len=5, pred_len=10, training=True
+        self, obs_len=5, pred_len=10, training=True,use_validation=False, validation_split=0.1
     ):
         super(FISHDataset, self).__init__()
         self.obs_len = obs_len
@@ -28,19 +28,22 @@ class FISHDataset(Dataset):
         self.seq_len = self.obs_len + self.pred_len
 
         if training:
-            data_root = 'datasets/fish/fish/train4.npy'
+            data_root = 'datasets/fish/fish/train_overlap.npy'
         else:
-            data_root = 'datasets/fish/fish/test4.npy'
+            data_root = 'datasets/fish/fish/test_overlap.npy'
 
-        self.trajs = np.load(data_root)
+        trajs = np.load(data_root)
 
-        if training:
-            self.trajs = self.trajs #84
-        else:
-            self.trajs = self.trajs #46
+        if not training and use_validation:
+
+            split_idx = int((1 - validation_split) * len(trajs))
+            trajs = trajs[split_idx:]
+
+
+        self.trajs = trajs
 
         self.batch_len = len(self.trajs)
-        print(self.batch_len)
+        print("batch_len" ,self.batch_len)
 
         self.traj_abs = torch.from_numpy(self.trajs).type(torch.float)
         self.traj_norm = torch.from_numpy(self.trajs-self.trajs[:,self.obs_len-1:self.obs_len]).type(torch.float)
