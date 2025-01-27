@@ -103,8 +103,8 @@ def train(train_loader,epoch):
 
 def ploting_losses(train_loss,valid_loss, file_path = None):
     plt.figure(figsize=(10, 5))
-    plt.plot(train_loss, label='Training Loss', color='blue')
-    plt.plot(valid_loss, label='Validation Loss', color='red')
+    plt.plot(train_loss[1:], label='Training Loss', color='blue')
+    plt.plot(valid_loss[1:], label='Validation Loss', color='red')
     plt.title('Training and Validation Losses')
     plt.xlabel('Epochs')
     plt.ylabel('Loss')

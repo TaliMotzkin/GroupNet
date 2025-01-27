@@ -260,6 +260,7 @@ class PastEncoder(nn.Module):
 
         # print("past encoder ftraj_input: ", ftraj_input.shape) #32., 20, 64
 
+        #todo add here an addition of the visition part? pass it also before through NN? the higher - the further the agents, so also flip the values 1/value
         query_input = F.normalize(ftraj_input,p=2,dim=2) #use L2 norm, dim 2
         feat_corr = torch.matmul(query_input,query_input.permute(0,2,1)) #[B, N, N] #todo understand this meaning of permute?
 
@@ -450,6 +451,8 @@ class Decoder(nn.Module):
         # print("x_true", x_true.shape,  " batch_size ", batch_size) #640,5,2  batch =640..
         prediction = torch.zeros((batch_size, self.future_length, 2))
         reconstruction = torch.zeros((batch_size, self.past_length, 2))
+        # prediction = torch.zeros((batch_size, self.future_length, 2)).cuda()
+        # reconstruction = torch.zeros((batch_size, self.past_length, 2)).cuda()
 
         for i in range(self.num_decompose): #numdecompose = 2
             x_hat, y_hat = self.decompose[i](x_true, x_hat, hidden) #recurrent - here it uses GRUs

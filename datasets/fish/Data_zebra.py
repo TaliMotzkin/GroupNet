@@ -362,9 +362,9 @@ class FishTrajectoryDataset3(Dataset):
 
 
 data_target = 'fish/'
-file_path_30 = 'fish_coords_48.csv'
-file_path_25 = 'fish_coords_36.csv'
-file_path_35 = 'fish_coords_20.csv'
+file_path_30 = 'fish_coords_48_normalized.csv'
+file_path_25 = 'fish_coords_36_normalized.csv'
+file_path_35 = 'fish_coords_20_normalized.csv'
 
 dataset = FishTrajectoryDataset3(file_path_30 ,file_path_25,file_path_35, True)
 all_trajs = dataset.get_trajectories()

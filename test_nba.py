@@ -25,18 +25,18 @@ class Constant:
     DIFF = 0
     # DIFF = 6
     X_MIN = 0
-    X_MAX = 31
+    X_MAX = 60
     # X_MAX = 100
     Y_MIN = 0
-    Y_MAX = 31
+    Y_MAX = 60
     # Y_MAX = 50
     COL_WIDTH = 0.3
     SCALE = 1.65
     FONTSIZE = 6
     # X_CENTER = X_MAX / 2 - DIFF / 1.5 + 0.10
-    X_CENTER = 15.5
+    X_CENTER = 30
     # Y_CENTER = Y_MAX - DIFF / 1.5 - 0.35
-    Y_CENTER = 15.5
+    Y_CENTER = 30
     MESSAGE = 'You can rerun the script and choose any event from 0 to '
 
 def draw_result(future,past,mode='pre'):

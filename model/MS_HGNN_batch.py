@@ -151,6 +151,8 @@ class MS_HGNN_oridinary(nn.Module):
 
         rel_rec = rel_rec
         rel_send = rel_send
+        # rel_rec = rel_rec.cuda()
+        # rel_send = rel_send.cuda()
 
         rel_rec = rel_rec[None,:,:].repeat(batch,1,1)
         rel_send = rel_send[None,:,:].repeat(batch,1,1)
@@ -314,12 +316,14 @@ class MS_HGNN_hyper(nn.Module):
                 all_combs = []
                 for i in range(actor_number): #or each actor i, generate all possible combinations of group_size - 1 other actors, excluding actor i
                     tensor_a = torch.arange(actor_number) #[0,1,2...19]
+                    # tensor_a = torch.arange(actor_number).cuda()
                     tensor_a = torch.cat((tensor_a[0:i],tensor_a[i+1:]),dim=0) #all indx except of i's
                     padding = (1,0,0,0)
                     all_comb = F.pad(torch.combinations(tensor_a,r=group_size-1),padding,value=i) #generate all combinations of group sized, if 3 -> [1,2,4]....
                     all_combs.append(all_comb[None,:,:])## A tensor of shape (1, C, group_size) containing all combinations of group_size actors, including actor i, starting from number i
                 self.all_combs = torch.cat(all_combs,dim=0)
                 self.all_combs = self.all_combs # N, numb_comb, group size
+                # self.all_combs = self.all_combs.cuda()
                 # print("all_combs.shape",self.all_combs.shape)
 
     def make_nmp_mlp(self):
@@ -460,9 +464,11 @@ def gumbel_softmax_sample(logits, tau=1, eps=1e-10):
     (MIT license)
     """
     gumbel_noise = sample_gumbel(logits.size(), eps=eps)
+
     # print("gumble noise , ", gumbel_noise.shape) #32,400,6
     if logits.is_cuda:
         gumbel_noise = gumbel_noise
+        # gumbel_noise = gumbel_noise.cuda()
     y = logits + Variable(gumbel_noise)
     return my_softmax(y / tau, axis=-1)
 
@@ -495,6 +501,8 @@ def gumbel_softmax(logits, tau=1, hard=False, eps=1e-10):
         y_hard = torch.zeros(*shape)
         if y_soft.is_cuda:
             y_hard = y_hard
+            # y_hard = y_hard.cuda()
+
         y_hard = y_hard.zero_().scatter_(-1, k.view(shape[:-1] + (1,)), 1.0)
         # this cool bit of code achieves two things:
         # - makes the output value exactly one-hot (since we add then
