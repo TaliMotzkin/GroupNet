@@ -15,7 +15,9 @@ import matplotlib.pyplot as plt
 import matplotlib.lines as mlines
 import matplotlib.animation as animation
 from matplotlib.animation import PillowWriter
-
+from torch.nn import functional as F
+from XGB import run_xgb
+import pandas as pd
 
 class Constant:
     """A class for handling constants"""
@@ -152,148 +154,11 @@ def vis_result(test_loader, args):
         iter += 1
     return
 
-def simulate(length, steps,method, test_loader, args, number_of_agents = None):
-    #length in seconds!
-    #need to send with batch = 1
-    total_steps = length/ 0.4
-    #each step is 0.4 seconds
-    random.seed(42)
-    num_batches = len(test_loader)
-
-    random_batch_idx = random.randint(0, num_batches - 1)
-
-    sample = test_loader.dataset[0][0].unsqueeze(0) # B,N, T, 2
-    # print("sample", sample)
-    centroids_mean = sample[0].cpu().numpy().mean(axis=0) # T, 2
-    centroids_new = sample[0].cpu().numpy().mean(axis=0)
-    # print("centroids", centroids.shape)
-    target = [20,30]
-
-    iter = 0
-    simulated = np.array(sample[0])
-    while len(simulated[0]) - 5 < total_steps:
-        with torch.no_grad():
-            prediction = model.inference_simulator(sample)
-        # print("prediction", prediction.shape)
-
-        prediction = prediction * args.traj_scale
-        prediction = np.array(prediction.cpu())  # (20, N,T,2)
-
-        if method == 'mean':
-            new_step = np.mean(prediction[:,:,:steps,:], axis=0)
-            # print("new_step_old", new_step) # N,T, 2
-            mean_centroid = np.mean(new_step, axis=0)  # T, 2
-            centroids_mean = np.concatenate((centroids_mean,mean_centroid), axis = 0)
-
-        if number_of_agents:
-
-            new_agents = prediction[:, :number_of_agents, :steps, :] #20, num, T, 2
-            # print("new_agents", new_agents)
-            distances = np.linalg.norm(new_agents - target, axis=-1) #20, N, T
-
-            distance_scores = distances.sum(axis=(1, 2))
-            closest_indices = np.argsort(distance_scores)[:1]
-            closest_positions = new_agents[closest_indices, ...].squeeze(0)
-
-            # print("closest_positions", closest_positions.shape)
-            #if choosing for each time step and each agent seperatly
-            # best_indices = distances.argmin(axis=0) #N, T
-            # # print("best_indices", best_indices)
-            #
-            # a_idx = np.arange(best_indices.shape[0])[:, None]
-            # t_idx = np.arange(best_indices.shape[1])[None, :]
-            # # print("a_idx", t_idx.shape,t_idx )
-            # closest_positions = new_agents[best_indices, a_idx, t_idx, :] # N, T, 2
-
-
-            new_step[:number_of_agents, :, :] = closest_positions #replacing the new agents
-            # print("closest_positions",  closest_positions)
-            # print("new_step", new_step)
-
-            mean_centroid_new = np.mean(new_step, axis=0)  # T, 2
-            centroids_new = np.concatenate((centroids_new, mean_centroid_new), axis=0)
-
-        if method == 'random':
-            random_idx = random.randint(0, 19)
-            new_step = prediction[random_idx, :, :steps, :]
-            mean_centroid = np.mean(new_step, axis=0)  # T, 2
-            centroids_mean = np.concatenate((centroids_mean, mean_centroid), axis=0)
-
-        new_trajectory = np.concatenate((sample[0],new_step), axis=1) #N, T+step, 2
-        sample = torch.from_numpy(new_trajectory[:,-5:,:]).unsqueeze(0) #add batch
-        simulated = np.concatenate((simulated,new_step), axis=1)
-        # if iter == 10:
-        #     print("simulated", simulated)
-        iter += 1
-    return simulated, centroids_mean, centroids_new
-
-def visualize_simulation(length, steps, method, test_loader, args, fps, output_path, test_simulation = False, agent_number = None):
-    if test_simulation:
-        simulated = test_loader.dataset[0][0] #N, T, 2
-        print("simulated out", simulated)
-        for i in range(int(length//2)):
-            five_time_steps = test_loader.dataset[i+1][0]
-            if i<2:
-                print("five_time_steps", five_time_steps)
-            simulated = np.concatenate((simulated, five_time_steps), axis=1)
-            centroids = simulated.mean(axis=0)  # T, 2
-    else:
-        simulated, centroids, centroids_new = simulate(length, steps, method, test_loader, args, agent_number)
-        # print(simulated.shape, centroids.shape, centroids_new.shape)
-    N, T, _ = simulated.shape
-
-    fig, ax = plt.subplots(figsize=(8, 6))
-    x_min, x_max = simulated[:, :, 0].min() - 1, simulated[:, :, 0].max() + 1
-    y_min, y_max = simulated[:, :, 1].min() - 1, simulated[:, :, 1].max() + 1
-    ax.set_xlim(x_min, x_max)
-    ax.set_ylim(y_min, y_max)
-    ax.set_xlabel("X coordinate")
-    ax.set_ylabel("Y coordinate")
-    ax.set_title("Simulation of agents")
-
-    colors = plt.cm.tab10(np.linspace(0, 1, N+1))
-    scatter = ax.scatter([], [], s=80)
-    scatter2 = ax.scatter([], [], s=80, marker='x')
-    if agent_number is not None:
-        scatter3 = ax.scatter([], [], s=80, marker='+', alpha = 0.7)
-        # colors = plt.cm.tab10(np.linspace(0, 1, N + 2))
-
-    def init():
-        scatter.set_offsets([])
-        return (scatter,)
-
-    def update(frame):
-        #in current frame get the positions for all agents.
-        current_positions = simulated[:, frame, :]  # N, 2
-        current_centre = centroids[frame, :] # 2
-        if agent_number is not None:
-            new_centre = centroids_new[frame, :]
-            scatter3.set_offsets(new_centre)
-            scatter3.set_color(colors[-2])
-
-        #update plot
-        scatter.set_offsets(current_positions)
-        scatter.set_color(colors)
-        scatter2.set_offsets(current_centre)
-        scatter2.set_color(colors[-1])
-
-        #title showing the current time step.
-        ax.set_title(f"Simulation at time : {frame*0.4:.1f}/{T*0.4:.1f}")
-        return (scatter,)
-
-    ani = animation.FuncAnimation(
-        fig, update, frames=range(T),
-        init_func=init, blit=True, interval= fps
-    )
-
-    #save
-    writer = PillowWriter(fps=fps)
-    ani.save(output_path, writer=writer)
-    plt.close(fig)
 
 
 
-def test_model_all(test_loader, args, simple_dist_plot =False, dist_plot=False, measure_res=False):
+
+def test_model_all(test_loader, args, simple_dist_plot =False, dist_plot=False, measure_res=False, plot_20 = False):
     total_num_pred = 0
     all_num = 0
     l2error_overall = 0
@@ -339,10 +204,11 @@ def test_model_all(test_loader, args, simple_dist_plot =False, dist_plot=False, 
     l2error_avg_36s_base = 0
     l2error_dest_36s_base = 0
 
+    all_X = []
+    all_y = []
     iteration = 0
     for data in test_loader:
-        future_traj = np.array(data['future_traj']) * args.traj_scale # B,N,T,2
-
+        print("data", data['future_traj'].shape)
 
         past_traj = np.array(data['past_traj']) * args.traj_scale
         last_5_steps = past_traj[:, :, -5:, :]
@@ -352,12 +218,27 @@ def test_model_all(test_loader, args, simple_dist_plot =False, dist_plot=False, 
             [last_position + i * avg_velocity for i in range(1, 11)], axis=2
         )
 
+        # print(past_traj.shape)
+        # past_traj_printing = past_traj.reshape(past_traj.shape[0]*past_traj.shape[1], 5, 2)
+        # print("past", past_traj_printing[9])
         # if iteration ==0:
             # print(last_5_steps[0,0], "last_5_steps")
             # print("baseline_prediction", baseline_prediction[0,0])
 
         with torch.no_grad():
             prediction, distributions = model.inference(data)
+        future_traj = data['future_traj']
+        print("future shape", future_traj.shape)
+        print("prediction shape ", prediction.permute(1,0,2,3).shape)
+        X, y = run_xgb(prediction.permute(1,0,2,3), future_traj)
+
+        future_traj = np.array(data['future_traj']) * args.traj_scale  # B,N,T,2
+
+        softmax_dist = F.softmax(distributions, dim=1)
+        all_X.append(X)
+        all_y.append(y)
+
+        print("softmax_dist", softmax_dist[9,:])
         prediction = prediction * args.traj_scale
         prediction = np.array(prediction.cpu()) #(20,BN,T,2)
         batch = future_traj.shape[0]
@@ -369,6 +250,22 @@ def test_model_all(test_loader, args, simple_dist_plot =False, dist_plot=False, 
 
         y = np.reshape(future_traj,(batch*actor_num,args.future_length, 2))
         y = y[None].repeat(20,axis=0)
+
+        if plot_20:
+            predictions_np = prediction
+            plt.figure(figsize=(8, 6))
+
+            for sample in range(20):
+                trajectory = predictions_np[sample, 1, :, :]  # (10, 2)
+                plt.plot(trajectory[:, 0], trajectory[:, 1], marker='o', linestyle='-',
+                         label=f"Sample {sample}" if sample < 5 else None)
+
+            plt.xlabel("X Coordinate")
+            plt.ylabel("Y Coordinate")
+            plt.title(f"20 Sampled Trajectories for Agent {1}")
+            plt.legend(loc="best", fontsize=8, ncol=2)
+            plt.grid(True)
+            plt.show()
 
         ''' measurment researching '''
         if measure_res:
@@ -386,8 +283,9 @@ def test_model_all(test_loader, args, simple_dist_plot =False, dist_plot=False, 
 
         ''' distribution researching '''
         if simple_dist_plot:
+            print(prediction.shape, "prediction")
             agent_idx = 9
-            time_idx = 9
+            time_idx = 0
             xy_samples = prediction[:, agent_idx, time_idx, :] #20,2
             print("xy_samples", xy_samples)
 
@@ -419,12 +317,15 @@ def test_model_all(test_loader, args, simple_dist_plot =False, dist_plot=False, 
             plt.show()
         if dist_plot:
             mean_predictions = np.mean(prediction, axis=0) #8, 10, 2
-            dists = np.linalg.norm(future_traj- prediction,axis=3) # 20,8,10
+            dists = np.linalg.norm(future_traj- prediction,axis=3) # 20,8,10, of all xy coords
+            print("dists", dists.shape) #20, 8, 10
             min_dists = np.min(dists, axis=0) #8, 10
-            best_option_idx = np.argmin(dists, axis=0)
+            best_option_idx = np.argmin(dists, axis=0) #taking the minimal option for each agent and each time step 8, 10, so each agent can have 10 time steps from different options...
 
-            std_predictions = np.std(prediction, axis=0)
+            std_predictions = np.std(prediction, axis=0) #std of all 20 options.
             stderr_predictions = std_predictions / np.sqrt(prediction.shape[0])
+            print("best_option_idx", best_option_idx.shape)
+            print("std_predictions", std_predictions.shape) #8, 10, 2 #var of an agent in each time step and coords
 
             cmap = plt.get_cmap("tab20")
             for t in range(prediction.shape[2]):
@@ -440,16 +341,16 @@ def test_model_all(test_loader, args, simple_dist_plot =False, dist_plot=False, 
                     color = cmap(agent % 20)
 
                     plt.scatter(pred_xy[0], pred_xy[1],
-                                s=80,   color=color , label=f"Agent {agent}")
+                                s=80,   color=color , label=f"Agent {agent}") #mean movement
                     plt.scatter(best_xy[0], best_xy[1],
-                                s=50, color=color,marker= '*', alpha=0.6)
+                                s=50, color=color,marker= '*', alpha=0.6) #best movement #todo i think i need to choose best movement as an entire traj, not taking timesteps from different options
 
                     gt_xy = future_traj[0][agent, t, :]
                     plt.scatter(gt_xy[0], gt_xy[1],
                                 s=100,
                                 color=color,
                                 marker='x',
-                                linewidths=2)
+                                linewidths=2) #actual movement
                     plt.hlines(y=pred_xy[1], xmin=pred_xy[0] - err_x, xmax=pred_xy[0] + err_x,
                                color=color, linestyles='-', linewidth=2)
                     plt.vlines(x=pred_xy[0], ymin=pred_xy[1] - err_y, ymax=pred_xy[1] + err_y,
@@ -513,7 +414,15 @@ def test_model_all(test_loader, args, simple_dist_plot =False, dist_plot=False, 
 
         all_num += batch
         iteration += 1
-        break
+
+    X_final = np.vstack(all_X)
+    y_final = np.concatenate(all_y)
+
+    df = pd.DataFrame(X_final)
+    df['target'] = y_final
+
+    # Save to CSV
+    df.to_csv("xgb_training_data.csv", index=False)
 
     print(all_num)
     l2error_overall /= all_num
@@ -638,7 +547,7 @@ if __name__ == '__main__':
     parser.add_argument('--model_names', default=None)
     parser.add_argument('--gpu', type=int, default=0)
     parser.add_argument('--model_save_dir', default='saved_models/fish_overlap')
-    parser.add_argument('--vis', action='store_true', default=True)
+    parser.add_argument('--vis', action='store_true', default=False)
     parser.add_argument('--traj_scale', type=int, default=1)
     parser.add_argument('--sample_k', type=int, default=20)
     parser.add_argument('--past_length', type=int, default=5)
@@ -662,7 +571,7 @@ if __name__ == '__main__':
 
     test_loader = DataLoader(
         test_dset,
-        batch_size=128,
+        batch_size=1,
         shuffle=False,
         num_workers=0,
         collate_fn=seq_collate,
@@ -687,11 +596,11 @@ if __name__ == '__main__':
 
         if args.vis:
             vis_result(test_loader, args)
-        test_model_all(test_loader, args)
+        # test_model_all(test_loader, args)
         # test  = np.load('datasets/nba/test.npy')
         # print('test :', test.shape, test[:5])
         # simulate(60, 1,'mean', test_loader, args)
 
-        # visualize_simulation(60, 5,'mean', test_loader, args, 5, 'video_simulator_mean_centre_3agents_5step_collective_choose.gif', agent_number=3)
+        visualize_simulation(160, 1,'mean', test_loader, args, 5, '1_step_mean.gif')
 
 

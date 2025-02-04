@@ -362,9 +362,9 @@ class FishTrajectoryDataset3(Dataset):
 
 
 data_target = 'fish/'
-file_path_30 = 'fish_coords_48_normalized.csv'
-file_path_25 = 'fish_coords_36_normalized.csv'
-file_path_35 = 'fish_coords_20_normalized.csv'
+file_path_30 = 'fish_coords_48_normalized_100.csv'
+file_path_25 = 'fish_coords_36_normalized_100.csv'
+file_path_35 = 'fish_coords_20_normalized_100.csv'
 
 dataset = FishTrajectoryDataset3(file_path_30 ,file_path_25,file_path_35, True)
 all_trajs = dataset.get_trajectories()
@@ -372,8 +372,8 @@ print(len(all_trajs))
 index = list(range(len(all_trajs)))
 import random
 from random import shuffle
-random.seed(0)
-shuffle(index)
+# random.seed(0)
+# shuffle(index)
 train_set = all_trajs[index[:9023]]
 test_set = all_trajs[index[9023:]]
 print('train num:',train_set.shape[0])

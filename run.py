@@ -1,4 +1,6 @@
-import torch
+import pandas as pd
+import numpy as np
+# import torch
 #
 # # Number of nodes
 # num_nodes = 3
@@ -18,8 +20,8 @@ import torch
 # print("rel_send matrix:\n", rel_send)
 # print("rel_rec matrix:\n", rel_rec)
 
-import torch
-import torch.nn as nn
+# import torch
+# import torch.nn as nn
 
 # class SimpleGRU(nn.Module):
 #     def __init__(self, input_size, hidden_size, num_layers=1):
@@ -52,87 +54,86 @@ import torch.nn as nn
 #
 # listik = [1,2,3,4,5]
 # print(listik[-2])
-import numpy as np
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.autograd import Variable
+# import torch
+# import torch.nn as nn
+# import torch.nn.functional as F
+# from torch.autograd import Variable
 
-scale = 3
-actor_number = 8
-
-if scale < actor_number:
-    group_size = scale
-    all_combs = []
-    for i in range(actor_number):  # or each actor i, generate all possible combinations of group_size - 1 other actors, excluding actor i
-        tensor_a = torch.arange(actor_number)  # [0,1,2...19]
-        # print(tensor_a)
-        # print(tensor_a[0:i], tensor_a[i + 1:])
-        tensor_a = torch.cat((tensor_a[0:i], tensor_a[i + 1:]), dim=0)  # all indx except of i's
-        # print(tensor_a)
-        padding = (1, 0, 0, 0)
-        all_comb = F.pad(torch.combinations(tensor_a, r=group_size - 1), padding,
-                         value=i)  # generate all combinations of group sized, if 3 -> [1,2,4]....
-
-        # print(all_comb[None, :, :].shape, all_comb)
-
-        all_combs.append(all_comb[None, :, :])  # A tensor of shape (1, C, group_size) containing all combinations of group_size actors, including actor i
-    # print(all_combs)
-    all_combs = torch.cat(all_combs, dim=0)
-    all_combs = all_combs # 8, 21, 3
-    # print(all_combs.shape)
-
-batch = 32
-ftraj_input = torch.from_numpy(np.random.rand(batch, 8, 10)) # batch, AGENTS, T* 2(dim, not xy)
-
-
-query_input = F.normalize(ftraj_input,p=2,dim=2)
-feat_corr = torch.matmul(query_input,query_input.permute(0,2,1)) # B, N, N
-
-
-all_indice = all_combs.clone() #(N,C,m) (actor_number, C, group_size)
-all_indice = all_indice[None,:,:,:].repeat(batch,1,1,1) # 32, N, C, s
-
-# print(all_indice.shape)
-
-all_matrix = feat_corr[:,None,None,:,:].repeat(1,actor_number,all_indice.shape[2],1,1)
-# print(all_matrix.shape) # B, N, C, N, N
-#all indices repeat:  # 32, N, C, s, N
-
-all_matrix = torch.gather(all_matrix,3,all_indice[:,:,:,:,None].repeat(1,1,1,1,actor_number))
-
-# print(all_matrix.shape) #torch.Size([32, 8, 21, 3, 8])
-
-#all indices repeat:  # 32, N, C, s, s
-all_matrix = torch.gather(all_matrix,4,all_indice[:,:,:,None,:].repeat(1,1,1,scale,1))
-
-# print(all_matrix.shape) # 32, N, C, s, s
-
-score = torch.sum(all_matrix,dim=(3,4),keepdim=False)
-
-# print(score.shape)
-_,max_idx = torch.max(score,dim=2)#coses the best combination!
-
-# print(max_idx.shape) #B, N
-indice = torch.gather(all_indice,2,max_idx[:,:,None,None].repeat(1,1,1,scale))[:,:,0,:]
-# print(max_idx[:,:,None,None].repeat(1,1,1,scale).shape) # B, N, 1, s
-
-# print(torch.gather(all_indice,2,max_idx[:,:,None,None].repeat(1,1,1,scale)).shape) # B, N, 1, s
-
-# print(indice.shape)
-
-H_matrix = torch.zeros(batch,actor_number,actor_number)
-H_matrix = H_matrix.scatter(2,indice,1)
-# print(H_matrix.shape)
-
-
-##Other H matrix option!
-_,indice = torch.topk(feat_corr,dim=2,k=scale,largest=True) #For each actor, select the top group_size neighbors based on correlation.
-#indice A tensor of shape (batch_size, actor_number, group_size) containing indices of the top correlated actors.
-# print(indice.shape)
-H_matrix = torch.zeros(batch,actor_number,actor_number)
-H_matrix = H_matrix.scatter(2,indice,1)
-# print(H_matrix.shape)
+# scale = 3
+# actor_number = 8
+#
+# if scale < actor_number:
+#     group_size = scale
+#     all_combs = []
+#     for i in range(actor_number):  # or each actor i, generate all possible combinations of group_size - 1 other actors, excluding actor i
+#         tensor_a = torch.arange(actor_number)  # [0,1,2...19]
+#         # print(tensor_a)
+#         # print(tensor_a[0:i], tensor_a[i + 1:])
+#         tensor_a = torch.cat((tensor_a[0:i], tensor_a[i + 1:]), dim=0)  # all indx except of i's
+#         # print(tensor_a)
+#         padding = (1, 0, 0, 0)
+#         all_comb = F.pad(torch.combinations(tensor_a, r=group_size - 1), padding,
+#                          value=i)  # generate all combinations of group sized, if 3 -> [1,2,4]....
+#
+#         # print(all_comb[None, :, :].shape, all_comb)
+#
+#         all_combs.append(all_comb[None, :, :])  # A tensor of shape (1, C, group_size) containing all combinations of group_size actors, including actor i
+#     # print(all_combs)
+#     all_combs = torch.cat(all_combs, dim=0)
+#     all_combs = all_combs # 8, 21, 3
+#     # print(all_combs.shape)
+#
+# batch = 32
+# ftraj_input = torch.from_numpy(np.random.rand(batch, 8, 10)) # batch, AGENTS, T* 2(dim, not xy)
+#
+#
+# query_input = F.normalize(ftraj_input,p=2,dim=2)
+# feat_corr = torch.matmul(query_input,query_input.permute(0,2,1)) # B, N, N
+#
+#
+# all_indice = all_combs.clone() #(N,C,m) (actor_number, C, group_size)
+# all_indice = all_indice[None,:,:,:].repeat(batch,1,1,1) # 32, N, C, s
+#
+# # print(all_indice.shape)
+#
+# all_matrix = feat_corr[:,None,None,:,:].repeat(1,actor_number,all_indice.shape[2],1,1)
+# # print(all_matrix.shape) # B, N, C, N, N
+# #all indices repeat:  # 32, N, C, s, N
+#
+# all_matrix = torch.gather(all_matrix,3,all_indice[:,:,:,:,None].repeat(1,1,1,1,actor_number))
+#
+# # print(all_matrix.shape) #torch.Size([32, 8, 21, 3, 8])
+#
+# #all indices repeat:  # 32, N, C, s, s
+# all_matrix = torch.gather(all_matrix,4,all_indice[:,:,:,None,:].repeat(1,1,1,scale,1))
+#
+# # print(all_matrix.shape) # 32, N, C, s, s
+#
+# score = torch.sum(all_matrix,dim=(3,4),keepdim=False)
+#
+# # print(score.shape)
+# _,max_idx = torch.max(score,dim=2)#coses the best combination!
+#
+# # print(max_idx.shape) #B, N
+# indice = torch.gather(all_indice,2,max_idx[:,:,None,None].repeat(1,1,1,scale))[:,:,0,:]
+# # print(max_idx[:,:,None,None].repeat(1,1,1,scale).shape) # B, N, 1, s
+#
+# # print(torch.gather(all_indice,2,max_idx[:,:,None,None].repeat(1,1,1,scale)).shape) # B, N, 1, s
+#
+# # print(indice.shape)
+#
+# H_matrix = torch.zeros(batch,actor_number,actor_number)
+# H_matrix = H_matrix.scatter(2,indice,1)
+# # print(H_matrix.shape)
+#
+#
+# ##Other H matrix option!
+# _,indice = torch.topk(feat_corr,dim=2,k=scale,largest=True) #For each actor, select the top group_size neighbors based on correlation.
+# #indice A tensor of shape (batch_size, actor_number, group_size) containing indices of the top correlated actors.
+# # print(indice.shape)
+# H_matrix = torch.zeros(batch,actor_number,actor_number)
+# H_matrix = H_matrix.scatter(2,indice,1)
+# # print(H_matrix.shape)
 
 # ftraj_input = torch.from_numpy(np.random.rand(32, 8, 10)) # batch, AGENTS, T* 2(dim, not xy)
 #
@@ -173,48 +174,51 @@ H_matrix = H_matrix.scatter(2,indice,1)
 
 
 
-import torch
-import torch.nn.functional as F
-np.random.seed(0)
-torch.random.manual_seed(0)
-
-
-def calculate_softmax_loss( pred, target):
-
-    # Calculate squared Euclidean distances
-    # pred shape: [B*N, S, T, 2]
-    # target shape: [B*N, T, 2]
-    target_expanded = target.unsqueeze(1).expand_as(pred)  # [B*N, S, T, 2]
-
-    # print(target_expanded)
-    diff = pred - target_expanded  # Difference
-    # print("diff", diff)
-
-    dist_squared = diff.pow(2).sum(dim=-1).sum(dim=-1)  # Sum squared differences across T and 2 dimensions
-
-    print("dist_squared", dist_squared)
-    scores = -dist_squared
-
-    probabilities = F.softmax(scores, dim=1)
-
-    print("probabilities", probabilities.shape)
-
-    _, closest_idx = dist_squared.min(dim=1)
-    # closest_idx = torch.tensor([2,2,2])
-    print(closest_idx, "closest_idx")
-
-    true_indices = torch.zeros_like(probabilities).scatter_(1, closest_idx.unsqueeze(1), 1)
-
-    print("true_indices", true_indices)
-    loss = F.cross_entropy(probabilities, closest_idx)
-
-    print("loss", loss)
-    return loss, probabilities
-
-
-target = torch.rand(3, 5, 2)
-pred = torch.rand(3,4, 5, 2)
-
+# import torch
+# import torch.nn.functional as F
+# np.random.seed(0)
+# torch.random.manual_seed(0)
+#
+#
+#
+# def calculate_softmax_loss(pred, target, model_output):
+#     # Calculate squared Euclidean distances
+#     # pred shape: [B*N, S, T, 2]
+#     # target shape: [B*N, T, 2]
+#     target_expanded = target.unsqueeze(1).expand_as(pred)  # [B*N, S, T, 2]
+#     # print(target_expanded)
+#     diff = pred - target_expanded  # Difference
+#     print("diff", diff)
+#     dist_squared = diff.pow(2).sum(dim=-1).sum(dim=-1)  # Sum squared differences across T and 2 dimensions
+#     print("dist_squared", dist_squared.shape, dist_squared)
+#     soft_targets = F.softmax(-dist_squared, dim=1) #larger distnace - smaller values
+#     print("soft_targets", soft_targets)
+#
+#     soft_targets = torch.tensor([[0.8, 0.02, 0.08, 0.1],
+#             [0.1, 0.02, 0.8, 0.08],
+#             [0.07, 0.9, 0.01, 0.02]])
+#
+#     probabilities = model_output
+#     print("probabilities", probabilities)
+#     predicted_probs = torch.clamp(probabilities, min=1e-9)
+#
+#     kl_div = soft_targets * torch.log(soft_targets / predicted_probs)
+#     print("kl_div", kl_div)
+#
+#     entropy = -torch.sum(predicted_probs * torch.log(predicted_probs), dim=1).mean()
+#     final_loss = torch.sum(kl_div, dim=1).mean()
+#     print("entropy", entropy)
+#     print("final_loss", final_loss)
+#     print("minus entorpy",final_loss+entropy )
+#
+#
+#     return final_loss
+#
+#
+#
+# target = torch.rand(3, 5, 2)
+# pred = torch.rand(3,4, 5, 2)
+# prob = torch.tensor([[0.99, 0.001, 0.001, 0.008],[ 0.001, 0.001, 0.99, 0.008],[0.001, 0.99,0.001, 0.008]])
 # target = torch.tensor([[[1, 1],
 #          [1, 1],
 #          [2, 2],
@@ -305,7 +309,65 @@ pred = torch.rand(3,4, 5, 2)
 #           [2, 2],
 #           [2, 2],
 #           [2, 2]]]])
+# prob = torch.tensor([[0.001, 0.99, 0.001, 0.008],[ 0.001, 0.001, 0.008, 0.99],[0.001, 0.001, 0.99, 0.008]])
+# prob = torch.tensor([[0.2, 0.2, 0.2, 0.4],[0.2, 0.2, 0.2, 0.4],[0.2, 0.2, 0.2, 0.4]])
+# prob = torch.tensor([[0.4, 0.2, 0.2, 0.2],[0.2, 0.2, 0.4, 0.2],[0.2, 0.4, 0.2, 0.2]])
 
-print("target", target)
-calculate_softmax_loss(pred, target)
+# print("target", target)
+# calculate_softmax_loss(pred, target, prob)
 # print(pred)
+
+
+###############@#@##@
+
+# import torch
+
+# Example dimensions
+# B, N, S, T, XY = 1, 2, 3, 5, 2  # (B*N, S, T, XY)
+# BN = B * N  # Total batch size
+#
+# # Example input tensor (random data for demonstration)
+# future_traj = torch.randn(BN, T, XY)  # (B*N, T, 2)
+# diverse_pred_traj = torch.randn(BN, S, T, XY)  # (B*N, S, T, 2)
+#
+#
+# # Expand `future_traj` to match `diverse_pred_traj`
+# target_expanded = future_traj.unsqueeze(1).expand_as(diverse_pred_traj)  # (B*N, S, T, 2)
+# print("target_expanded", diverse_pred_traj)
+#
+#
+# # Reshape each S trajectory to flatten (T,2) → (T*2)
+# target_flattened = diverse_pred_traj.reshape(BN, S*T*XY)  # (B*N, S*T*2)
+# print("target_flattened", target_flattened)
+#
+# # Concatenate all S options together along the last dimension
+# target_concat = target_flattened.unsqueeze(1).expand(BN, S, S*T*XY).reshape(BN*S, S*T*XY)  # (B*N, S, T*2*S)
+# print("target_concat", target_concat)
+#
+# serial_numbers = torch.arange(S).repeat(BN).unsqueeze(-1) # (B*N, S, 1)
+#
+# # Step 4: Concatenate the serial number to the trajectory data
+# final_output = torch.cat((target_concat, serial_numbers), dim=-1) # (B*N, S, (T*XY*S) + 1)
+#
+# # Print final shape
+# print(final_output)
+#
+#
+#
+#
+#
+# B, N, S = 1, 2, 3  # (B*N, S)
+# BN = B * N  # Total batch size
+
+# Example class labels (random values for demonstration)
+# class_labels = torch.randint(0, S, (BN, S))  # (B*N, S), simulated ranking class labels
+# print(class_labels, "class_labels")
+# # Step 1: Repeat each row S times → (BN*S, S)
+# class_labels_expanded = class_labels.repeat_interleave(S, dim=0)  # (B*N*S, S)
+#
+# # Print final shape
+# print(class_labels_expanded)
+
+
+data = pd.read_csv("xgb_training_data.csv")
+print(data[0])
