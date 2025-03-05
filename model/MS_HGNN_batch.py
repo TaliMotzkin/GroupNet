@@ -415,7 +415,7 @@ class MS_HGNN_hyper(nn.Module):
 
 
     def forward(self, h_states, corr):
-        curr_hidden = h_states #(num_pred, h_dim) #32, 20, 64, #cor = 32, 20, 20
+        curr_hidden = h_states #(num_pred, h_dim) #32, N, 64, #cor = B, N, N
 
         if self.listall:
             H = self.init_adj_attention_listall(curr_hidden,corr,scale_factor=self.scale)
@@ -440,7 +440,7 @@ class MS_HGNN_hyper(nn.Module):
                     edge_feat, _ = nmp_mlp(self.node2edge(node_feat, H, idx=node2edge_idx)) 
         node_feat = self.nmp_mlp_end(self.edge2node(edge_feat,node_feat, H,node2edge_idx))
         # print("node feat ", node_feat.shape)
-        return node_feat, factor
+        return node_feat, factor, H
 
 
 def sample_gumbel(shape, eps=1e-10):

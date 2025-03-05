@@ -12,12 +12,10 @@ from data.dataloader_nba import NBADataset
 from model.GroupNet_nba import GroupNet
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
-import matplotlib.lines as mlines
-import matplotlib.animation as animation
-from matplotlib.animation import PillowWriter
 from torch.nn import functional as F
 from XGB import run_xgb
 import pandas as pd
+from Simulator import visualize_simulation
 
 class Constant:
     """A class for handling constants"""
@@ -125,7 +123,7 @@ def vis_result(test_loader, args):
             with torch.no_grad():
                 prediction, distributions = model.inference(data)
             prediction = prediction * args.traj_scale
-            prediction = np.array(prediction.cpu()) #(BN,20,T,2)
+            prediction = np.array(prediction.cpu()) #(20,BN, T,2)
             print("pred length", len(prediction))#20
             batch = future_traj.shape[0]#10
             print("batch size", batch)
@@ -158,7 +156,7 @@ def vis_result(test_loader, args):
 
 
 
-def test_model_all(test_loader, args, simple_dist_plot =False, dist_plot=False, measure_res=False, plot_20 = False):
+def test_model_all(test_loader, args, simple_dist_plot =False, dist_plot=False, measure_res=False, plot_20 = False, XGB=False):
     total_num_pred = 0
     all_num = 0
     l2error_overall = 0
@@ -208,7 +206,7 @@ def test_model_all(test_loader, args, simple_dist_plot =False, dist_plot=False, 
     all_y = []
     iteration = 0
     for data in test_loader:
-        print("data", data['future_traj'].shape)
+        # print("data", data['future_traj'].shape)
 
         past_traj = np.array(data['past_traj']) * args.traj_scale
         last_5_steps = past_traj[:, :, -5:, :]
@@ -226,19 +224,24 @@ def test_model_all(test_loader, args, simple_dist_plot =False, dist_plot=False, 
             # print("baseline_prediction", baseline_prediction[0,0])
 
         with torch.no_grad():
-            prediction, distributions = model.inference(data)
-        future_traj = data['future_traj']
-        print("future shape", future_traj.shape)
-        print("prediction shape ", prediction.permute(1,0,2,3).shape)
-        X, y = run_xgb(prediction.permute(1,0,2,3), future_traj)
+            prediction, distributions, H = model.inference(data)
+            # print("H out", H.shape)
+            # print("data ", data["past_traj"].shape)
+            # print("future_traj ", data["future_traj"].shape)
+            # print("prediction", prediction.shape)
+        if XGB:
+            future_traj = data['future_traj']
+            print("future shape", future_traj.shape)
+            print("prediction shape ", prediction.permute(1,0,2,3).shape)
+            X, y = run_xgb(prediction.permute(1,0,2,3), future_traj)
+
+            softmax_dist = F.softmax(distributions, dim=1)
+            all_X.append(X)
+            all_y.append(y)
+            print("softmax_dist", softmax_dist[9, :])
 
         future_traj = np.array(data['future_traj']) * args.traj_scale  # B,N,T,2
 
-        softmax_dist = F.softmax(distributions, dim=1)
-        all_X.append(X)
-        all_y.append(y)
-
-        print("softmax_dist", softmax_dist[9,:])
         prediction = prediction * args.traj_scale
         prediction = np.array(prediction.cpu()) #(20,BN,T,2)
         batch = future_traj.shape[0]
@@ -256,15 +259,20 @@ def test_model_all(test_loader, args, simple_dist_plot =False, dist_plot=False, 
             plt.figure(figsize=(8, 6))
 
             for sample in range(20):
-                trajectory = predictions_np[sample, 1, :, :]  # (10, 2)
-                plt.plot(trajectory[:, 0], trajectory[:, 1], marker='o', linestyle='-',
+                trajectory = predictions_np[sample, 6, :, :]  # (10, 2)
+                plt.plot(trajectory[:, 0], trajectory[:, 1], marker='', linestyle='-',
                          label=f"Sample {sample}" if sample < 5 else None)
 
+            mean_traj = predictions_np[:, 6, :, :].mean(axis=0)
+            plt.plot(future_traj[0, 6, :, 0], future_traj[0, 6, :, 1], marker='o', linestyle='-', color='red', label="Ground Truth")
+            plt.plot(mean_traj[ :, 0], mean_traj[:, 1], marker='o', linestyle='-', color='blue',
+                     label="Mean trajectory")
             plt.xlabel("X Coordinate")
             plt.ylabel("Y Coordinate")
-            plt.title(f"20 Sampled Trajectories for Agent {1}")
+            plt.title(f"20 Sampled Trajectories for Agent {6} at time step 6")
             plt.legend(loc="best", fontsize=8, ncol=2)
             plt.grid(True)
+            plt.savefig("20_trajectories.png")
             plt.show()
 
         ''' measurment researching '''
@@ -412,17 +420,20 @@ def test_model_all(test_loader, args, simple_dist_plot =False, dist_plot=False, 
         l2error_overall_base += np.mean(np.min(np.mean(np.linalg.norm(y[:,:,:10,:] - baseline_prediction[:,:,:10,:], axis = 3),axis=2),axis=0))*batch#2~!
         l2error_dest_base += np.mean(np.min(np.mean(np.linalg.norm(y[:,:,9:10,:] - baseline_prediction[:,:,9:10,:], axis = 3),axis=2),axis=0))*batch
 
+
         all_num += batch
         iteration += 1
 
-    X_final = np.vstack(all_X)
-    y_final = np.concatenate(all_y)
 
-    df = pd.DataFrame(X_final)
-    df['target'] = y_final
+    if XGB:
+        X_final = np.vstack(all_X)
+        y_final = np.concatenate(all_y)
 
-    # Save to CSV
-    df.to_csv("xgb_training_data.csv", index=False)
+        df = pd.DataFrame(X_final)
+        df['target'] = y_final
+
+        # Save to CSV
+        df.to_csv("xgb_training_data.csv", index=False)
 
     print(all_num)
     l2error_overall /= all_num
@@ -571,7 +582,7 @@ if __name__ == '__main__':
 
     test_loader = DataLoader(
         test_dset,
-        batch_size=1,
+        batch_size=128,
         shuffle=False,
         num_workers=0,
         collate_fn=seq_collate,
@@ -601,6 +612,11 @@ if __name__ == '__main__':
         # print('test :', test.shape, test[:5])
         # simulate(60, 1,'mean', test_loader, args)
 
-        visualize_simulation(160, 1,'mean', test_loader, args, 5, '1_step_mean.gif')
+        # visualize_simulation(False, [80,90], model, 160, 1,'random', test_loader, args, 5, '3agents_5to1_steps_random_closest_centroid_sample1500.gif',
+        #                   steps_control = 5, steps_uncontrol=1, agent_indexes=[0, 5, 6], choosing_option_by = "closest_centroid")
 
+        # visualize_simulation(True, [[80,90], [20,30], [40,60],[30,50]], model, 160, 1,'control', test_loader,
+        #                      args, 5,'raw_controled_4agent_1step_control_sample0.gif', agent_indexes=[0, 1, 2, 3])
 
+        visualize_simulation(False, [80, 90], model, 300, 1, 'first', test_loader, args, 10,
+                             'choosing_first_traj.gif')

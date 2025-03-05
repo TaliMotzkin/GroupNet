@@ -279,7 +279,7 @@ class PastEncoder(nn.Module):
         ftraj_input = self.input_fc3(
             self.add_category(ftraj_input))  # adding meaning of ball and differnt players, now all set to 1
 
-        # print("past encoder ftraj_input: ", ftraj_input.shape) #32., 20, 64
+        # print("past encoder ftraj_input: ", ftraj_input.shape) #32., 20, 64 ->!!!!!!! B, N, Features
 
         query_input = F.normalize(ftraj_input, p=2, dim=2)  # use L2 norm, dim 2
         feat_corr = torch.matmul(query_input,
@@ -290,11 +290,13 @@ class PastEncoder(nn.Module):
         ftraj_inter, _ = self.interaction(ftraj_input)  # ([32, 20, 64]
 
         if len(self.args.hyper_scales) > 0:
-            ftraj_inter_hyper, _ = self.interaction_hyper(ftraj_input, feat_corr)  # ([32, 20, 64]
+            ftraj_inter_hyper, _ , H1 = self.interaction_hyper(ftraj_input, feat_corr)  # ([32, 20, 64]
         if len(self.args.hyper_scales) > 1:
-            ftraj_inter_hyper2, _ = self.interaction_hyper2(ftraj_input, feat_corr)  # ([32, 20, 64]
+            ftraj_inter_hyper2, _, H2 = self.interaction_hyper2(ftraj_input, feat_corr)  # ([32, 20, 64]
+            new_H = torch.cat((H1, H2),dim= 1 )
         if len(self.args.hyper_scales) > 2:
-            ftraj_inter_hyper3, _ = self.interaction_hyper3(ftraj_input, feat_corr)
+            ftraj_inter_hyper3, _ , H3 = self.interaction_hyper3(ftraj_input, feat_corr)
+            new_H = torch.cat((new_H, H3),dim= 1 )
 
         if len(self.args.hyper_scales) == 0:
             final_feature = torch.cat((ftraj_input, ftraj_inter), dim=-1)  # ([32, 20, 64]
@@ -308,7 +310,9 @@ class PastEncoder(nn.Module):
 
         output_feature = final_feature.view(batch_size * agent_num, -1)  # 32*20, 64*4
         # print("after concutinationg all in encoder past ", output_feature.shape)
-        return output_feature
+
+        # print("H", H1.shape, H2.shape, H1[10], H2[110:130])
+        return output_feature, new_H
 
 
 class FutureEncoder(nn.Module):
@@ -692,7 +696,7 @@ class GroupNet(nn.Module):
         inputs_for_posterior = torch.cat((future_traj, future_vel), dim=-1)  # 32*20, T=10, VXY =4
 
         # print("inputs_for_posterior, ", inputs_for_posterior.shape)
-        past_feature = self.past_encoder(inputs, batch_size, agent_num)  # 32*20, 64*4
+        past_feature, _ = self.past_encoder(inputs, batch_size, agent_num)  # 32*20, 64*4
         qz_param = self.future_encoder(inputs_for_posterior, batch_size, agent_num, past_feature)  # 32*20, 64
 
         ### q dist ### of future and past
@@ -790,7 +794,7 @@ class GroupNet(nn.Module):
 
         inputs = torch.cat((past_traj, past_vel), dim=-1)
 
-        past_feature = self.past_encoder(inputs, batch_size, agent_num)
+        past_feature, H = self.past_encoder(inputs, batch_size, agent_num)
 
         sample_num = 20
         if self.args.learn_prior:
@@ -817,7 +821,7 @@ class GroupNet(nn.Module):
 
         outputs_softmax = self.final_model(diverse_pred_traj)
         diverse_pred_traj = diverse_pred_traj.permute(1, 0, 2, 3)
-        return diverse_pred_traj, outputs_softmax
+        return diverse_pred_traj, outputs_softmax, H
 
     def inference_simulator(self, data):
         device = self.device
@@ -833,7 +837,7 @@ class GroupNet(nn.Module):
 
         inputs = torch.cat((past_traj, past_vel), dim=-1)
 
-        past_feature = self.past_encoder(inputs, batch_size, agent_num)
+        past_feature, _ = self.past_encoder(inputs, batch_size, agent_num)
 
         sample_num = 20
         if self.args.learn_prior:
