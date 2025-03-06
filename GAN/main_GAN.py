@@ -247,7 +247,7 @@ def train(test_loader,val_loader, args, G, M, D):
 
 
 def pred(val_loader, args, model, G):
-
+#
     G.eval()
     iter_num = 0
     sample = val_loader.dataset[0][0].unsqueeze(0)
