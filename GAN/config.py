@@ -6,8 +6,8 @@ import torch
 
 def parse_args():
     parser = argparse.ArgumentParser(description="NPCGAN")
-    parser.add_argument("--epoch", type=int, default=1)
-    parser.add_argument("--batch_size", type=int, default=64)
+    parser.add_argument("--epoch", type=int, default=3)
+    parser.add_argument("--batch_size", type=int, default=20)
     parser.add_argument("--heads", type=int, default=2)
     parser.add_argument("--depth", type=int, default=2)
     parser.add_argument("--dim", type=int, default=32)
@@ -15,7 +15,7 @@ def parse_args():
     parser.add_argument("--noise_dim", type=int, default=64)
     parser.add_argument("--dropout", type=float, default=0.2)
     parser.add_argument("--out_dir", dest="out_dir", type=str, default="./out/")
-    parser.add_argument("--model_dir", dest="model_dir", type=str, default="./model/")
+    parser.add_argument("--model_dir", dest="model_dir", type=str, default="./GAN_saved_model/")
     parser.add_argument("--dataset", dest="dataset", type=str, default="raw")
     parser.add_argument("--G_dict", dest="G_dict", type=str, default="")
     parser.add_argument("--C_dict", dest="C_dict", type=str, default="")
@@ -41,13 +41,12 @@ def parse_args():
     parser.add_argument('--agent', default=0)
     parser.add_argument('--target', default=[80,80])
     parser.add_argument('--method', default="mean")
+    parser.add_argument('--length',  default=6000)
 
     args = parser.parse_args()
     args.device = "cuda" if torch.cuda.is_available() else "cpu"
-    # if "timestamp" not in args:
-    #     args.timestamp = datetime.datetime.now(dateutil.tz.tzlocal()).strftime(
-    #         "%Y_%m_%d_%H_%M_%S"
-    #     )
+    if "timestamp" not in args:
+        args.timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     return args
 
 

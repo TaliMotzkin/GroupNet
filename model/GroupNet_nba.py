@@ -828,7 +828,7 @@ class GroupNet(nn.Module):
         batch_size = data.shape[0]
         agent_num = data.shape[1]
 
-        past_traj = data.view(batch_size * agent_num, self.args.past_length, 2).to(device).contiguous()
+        past_traj = data.reshape(batch_size * agent_num, self.args.past_length, 2).to(device).contiguous()
 
         past_vel = past_traj[:, 1:] - past_traj[:, :-1, :]
         past_vel = torch.cat([past_vel[:, [0]], past_vel], dim=1)
@@ -837,7 +837,7 @@ class GroupNet(nn.Module):
 
         inputs = torch.cat((past_traj, past_vel), dim=-1)
 
-        past_feature, _ = self.past_encoder(inputs, batch_size, agent_num)
+        past_feature, H = self.past_encoder(inputs, batch_size, agent_num)
 
         sample_num = 20
         if self.args.learn_prior:
@@ -862,4 +862,4 @@ class GroupNet(nn.Module):
         diverse_pred_traj, _ = self.decoder(past_feature_repeat, z, batch_size, agent_num, past_traj, cur_location,
                                             sample_num=self.args.sample_k, mode='inference')  # Z in the decodng
         diverse_pred_traj = diverse_pred_traj.permute(1, 0, 2, 3)
-        return diverse_pred_traj
+        return diverse_pred_traj, H

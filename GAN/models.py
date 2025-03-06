@@ -225,8 +225,8 @@ class Mission(nn.Module):
 
     def forward(self, past_traj, new_traj, target, H):
         # print("mission started")
-        for name, param in self.edge_embedding.named_parameters():
-            print(name, param.requires_grad)
+        # for name, param in self.edge_embedding.named_parameters():
+        #     print(name, param.requires_grad)
 
         edge_feat = self.edge_embedding(H.permute(0, 2, 1))  # B, N, F
         # print("edge_feat", edge_feat.requires_grad)
@@ -234,6 +234,7 @@ class Mission(nn.Module):
 
         edge_node_features = torch.cat([past_traj, edge_feat.unsqueeze(2).expand(-1, -1, 5, -1)],
                                        dim=-1)  # (B, N, 5, F+2)
+
         edge_node_features = edge_node_features.view(edge_node_features.shape[0] * edge_node_features.shape[1],
                                                      edge_node_features.shape[2],
                                                      -1)  # Flatten time for transformer input
@@ -243,6 +244,8 @@ class Mission(nn.Module):
         # print("edge_node_features", edge_node_features.shape)
         past_rel_features = self.encoder(edge_node_features)  # learns relationships over time #B*N, 5, F+2
         past_rel_features = past_rel_features.permute(1, 0, 2)
+
+        new_traj = new_traj.view(new_traj.shape[0] * new_traj.shape[1], 10, 2)
 
         future_encoder = self.future_encoder(new_traj)
         past_future_features = torch.cat([past_rel_features,future_encoder ], dim=1)  #B*N, 15, F+2
@@ -354,10 +357,10 @@ class Discrimiter(nn.Module):
         #combine timeing with group dynamics
         past_rel_timed = t_out * past_rel_features  # (B*N, 5, F) #represents group interactions with a time-aware context
 
-        #future dynamics with groupnet
-        print("agents_future_steps", agents_future_steps.shape)
-        print("agents_future_steps.view",
-              agents_future_steps.view(agents_future_steps.shape[0]*agents_future_steps.shape[1], 10, 2).shape) #BN, 10, 2
+        # #future dynamics with groupnet
+        # print("agents_future_steps", agents_future_steps.shape)
+        # print("agents_future_steps.view",
+        #       agents_future_steps.view(agents_future_steps.shape[0]*agents_future_steps.shape[1], 10, 2).shape) #BN, 10, 2
         future_encoded = self.future_encoder(agents_future_steps.view(agents_future_steps.shape[0]*agents_future_steps.shape[1], 10, 2)) #B*N, 10, F
 
 

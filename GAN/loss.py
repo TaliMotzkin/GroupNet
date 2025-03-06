@@ -53,10 +53,10 @@ class LossCompute:
         agents_future_steps_pred[:,agent,:,: ] = pred_trajectories
         scores_fake = self.netD(prediction, H , data,agent,agents_future_steps_pred)
         scores_real = self.netD(prediction, H , data,agent, agents_future_steps)
-        # print("scores_fake", scores_fake)
+        # print("scores_fake", scores_fake.shape)
         # print("scores_real", scores_real)
         loss_real, loss_fake = self.gan_d_loss(scores_fake, scores_real)  # BCEloss
-        return loss_real + loss_fake , loss_real.item(), loss_fake.item()
+        return loss_real + loss_fake , loss_real.item(), loss_fake.item(), scores_fake, scores_real
 
     def compute_Mission_loss(self, past_traj, future_steps, target, mission, H):
         col_fake=self.netM(past_traj, future_steps, target, H) #traj, pre speed, curr speed -> agents, seq of 7, xy
