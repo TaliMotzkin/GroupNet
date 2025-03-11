@@ -6,7 +6,7 @@ import torch
 
 def parse_args():
     parser = argparse.ArgumentParser(description="NPCGAN")
-    parser.add_argument("--epoch", type=int, default=3)
+    parser.add_argument("--epoch", type=int, default=20)
     parser.add_argument("--batch_size", type=int, default=20)
     parser.add_argument("--heads", type=int, default=2)
     parser.add_argument("--depth", type=int, default=2)
@@ -39,11 +39,12 @@ def parse_args():
     parser.add_argument('--future_length', type=int, default=10)
 
     parser.add_argument('--agent', default=0)
-    parser.add_argument('--target', default=[80,80])
+    parser.add_argument('--target', default=[[80,80], [0,80], [0,0], [80,0], [40,40]])
     parser.add_argument('--method', default="mean")
-    parser.add_argument('--length',  default=6000)
-    parser.add_argument('--mode', type=str, default="train")
-    parser.add_argument('--GAN_models', type=str, default="")
+    parser.add_argument('--length',  default=2500)
+    parser.add_argument('--heat_map_path', default='Classifier/heatmap')
+    parser.add_argument('--test_target', default=[[60, 60], [10, 50], [10, 10], [86, 0], [0, 40]])
+
 
     args = parser.parse_args()
     args.device = "cuda" if torch.cuda.is_available() else "cpu"

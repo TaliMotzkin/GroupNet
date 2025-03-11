@@ -44,8 +44,8 @@ def generate_heatmaps(output_path, simulated, best_simulated, worst_simulated, t
         # Find target frequency
         x_idx = np.digitize(target[0], x_edges) - 1
         y_idx = np.digitize(target[1], y_edges) - 1
-        print("XY", x_idx, y_idx)
-        print("edges", x_edges, y_edges)
+        # print("XY", x_idx, y_idx)
+        # print("edges", x_edges, y_edges)
         target_frequency = heatmap[x_idx, y_idx] if (
                     0 <= x_idx < heatmap.shape[0] and 0 <= y_idx < heatmap.shape[1]) else 0
 
@@ -62,9 +62,10 @@ def generate_heatmaps(output_path, simulated, best_simulated, worst_simulated, t
         # Annotate the target frequency near the legend or title
         plt.title(f"{title}\n(Target Frequency: {int(target_frequency)})", fontsize=14)
         path = os.path.splitext(output_path)[0]
-        filename = title.replace(" ", "_") + path +".png"
+        # filename = title.replace(" ", "_") + path + ".png"
+        filename = path + "/" + title.replace(" ", "_") + ".png"
         plt.savefig(filename,  dpi=300, bbox_inches='tight')
-        plt.show()
+        # plt.show()
         plt.close()
 
     def plot_heatmap_centroids(data, title, target):
@@ -78,9 +79,9 @@ def generate_heatmaps(output_path, simulated, best_simulated, worst_simulated, t
         # Find target frequency
         x_idx = np.digitize(target[0], x_edges) - 1
         y_idx = np.digitize(target[1], y_edges) - 1
-        print("target", target[0])
-        print("XY", x_idx, y_idx)
-        print("edges", x_edges, y_edges)
+        # print("target", target[0])
+        # print("XY", x_idx, y_idx)
+        # print("edges", x_edges, y_edges)
         target_frequency = heatmap[x_idx, y_idx] if (
                     0 <= x_idx < heatmap.shape[0] and 0 <= y_idx < heatmap.shape[1]) else 0
 
@@ -99,9 +100,12 @@ def generate_heatmaps(output_path, simulated, best_simulated, worst_simulated, t
 
         # Save the figure
         path = os.path.splitext(output_path)[0]
-        filename = title.replace(" ", "_") + path + ".png"
+        # print("path", path)
+        # filename = title.replace(" ", "_") + path + ".png"
+        filename = path + "/" + title.replace(" ", "_") +  ".png"
+
         plt.savefig(filename, dpi=300, bbox_inches='tight')
-        plt.show()
+        # plt.show()
         plt.close()
 
 
@@ -206,7 +210,7 @@ def test_option(method, agent_indexes, iter, options_controled, new_step_uncontr
 
 
 
-def simulate_separate_controlled_uncontrolled(target_xy, output_path, model, length, steps_control, steps_uncontrol, method, test_loader, args, agent_indexes, choosing_option_by):
+def simulate_separate_controlled_uncontrolled(init_sample, target_xy, output_path, model, length, steps_control, steps_uncontrol, method, test_loader, args, agent_indexes, choosing_option_by):
     # length in seconds!
     # need to send with batch = 1
     total_steps = length / 0.4
@@ -215,7 +219,7 @@ def simulate_separate_controlled_uncontrolled(target_xy, output_path, model, len
     num_batches = len(test_loader)
 
 
-    sample = test_loader.dataset[1500][0].unsqueeze(0)  # B,N, T, 2
+    sample = test_loader.dataset[init_sample][0].unsqueeze(0)  # B,N, T, 2
     # print("sample", sample)
 
     target = target_xy
@@ -231,7 +235,7 @@ def simulate_separate_controlled_uncontrolled(target_xy, output_path, model, len
             predicting_times = steps_control//steps_uncontrol
 
             with torch.no_grad():
-                prediction = model.inference_simulator(sample) #-> 20, 8, 10, 2
+                prediction , _= model.inference_simulator(sample) #-> 20, 8, 10, 2
             prediction = prediction * args.traj_scale
             prediction = np.array(prediction.cpu())  # (20, N,T,2)
 
@@ -305,7 +309,7 @@ def simulate_separate_controlled_uncontrolled(target_xy, output_path, model, len
     return simulated, centroids_mean, centroids_mean
 
 
-def simulate(target_xy, model, length, steps, method, test_loader, args, number_of_agents=None, collective_choose=False):
+def simulate(init_sample, target_xy, model, length, steps, method, test_loader, args, number_of_agents=None, collective_choose=False):
     # length in seconds!
     # need to send with batch = 1
     total_steps = length / 0.4
@@ -316,7 +320,7 @@ def simulate(target_xy, model, length, steps, method, test_loader, args, number_
 
     random_batch_idx = random.randint(0, num_batches - 1)
 
-    sample = test_loader.dataset[0][0].unsqueeze(0)  # B,N, T, 2
+    sample = test_loader.dataset[init_sample][0].unsqueeze(0)  # B,N, T, 2
     # print("sample", sample.shape)
     centroids_mean = sample[0].cpu().numpy().mean(axis=0)  # T, 2
     centroids_new = sample[0].cpu().numpy().mean(axis=0)
@@ -327,7 +331,7 @@ def simulate(target_xy, model, length, steps, method, test_loader, args, number_
     simulated = np.array(sample[0]) #8 agents, 5 time steps, 2 coords
     while len(simulated[0]) - 5 < total_steps:
         with torch.no_grad():
-            prediction = model.inference_simulator(sample)
+            prediction, _ = model.inference_simulator(sample)
         # print("prediction", prediction.shape) # (20, N,T,2) -> 20, 8, 10, 2
 
         prediction = prediction * args.traj_scale

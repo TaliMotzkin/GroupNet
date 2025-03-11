@@ -6,6 +6,8 @@ from torch import nn
 from models import Generator, Mission, Discrimiter
 import sys
 from utilis_GAN import saveModel
+import matplotlib.animation as animation
+from matplotlib.animation import PillowWriter
 import matplotlib.pyplot as plt
 from torch.utils.data import random_split, DataLoader
 
@@ -27,13 +29,13 @@ def init_weights(m):
 
 def create_traj(test_loader, model, length, args, real_data =False):
 
-    sample = test_loader.dataset[:args.batch_size][0] # B,N, T, 2
+    sample = test_loader.dataset[:args.batch_size][0].to(args.device) # B,N, T, 2
     iter = 0
-    past_traj = torch.empty((0, 8, 5,2)) # total samples, 8 agents, 5 time steps, 2 coords
+    past_traj = torch.empty((0, 8, 5,2)).to(args.device) # total samples, 8 agents, 5 time steps, 2 coords
 
-    future_traj = torch.empty((0, 8, 10, 2, 20))  # (Total_samples, N, 10, 2, 20)
-    selected_traj = torch.empty((0, 8, 10, 2))  # (Total_samples, N, 10, 2)
-    H_list = torch.empty((0, 9,8))
+    future_traj = torch.empty((0, 8, 10, 2, 20)).to(args.device)  # (Total_samples, N, 10, 2, 20)
+    selected_traj = torch.empty((0, 8, 10, 2)).to(args.device)  # (Total_samples, N, 10, 2)
+    H_list = torch.empty((0, 9,8)).to(args.device)
 
     while len(past_traj) - 5 < length:
         with torch.no_grad():
@@ -63,7 +65,7 @@ def create_traj(test_loader, model, length, args, real_data =False):
 
 
 
-def plot_losses(train_losses_g, train_losses_d, val_losses_g, val_losses_d,
+def plot_losses(args, train_losses_g, train_losses_d, val_losses_g, val_losses_d,
                 train_scores_real, train_scores_fake, val_scores_real, val_scores_fake):
     epochs = range(1, len(train_losses_g) + 1)
 
@@ -79,7 +81,7 @@ def plot_losses(train_losses_g, train_losses_d, val_losses_g, val_losses_d,
     plt.ylabel('Generator Loss')
     plt.legend()
     plt.title('Generator Loss Progression')
-    plt.savefig("GAN_plots\GAN_Generator_Loss.png")
+    plt.savefig(f"GAN\GAN_plots\GAN_Generator_Loss_{args.timestamp}.png")
     plt.show()
 
     plt.figure(figsize=(8, 5))
@@ -89,7 +91,7 @@ def plot_losses(train_losses_g, train_losses_d, val_losses_g, val_losses_d,
     plt.ylabel('Discriminator Loss')
     plt.legend()
     plt.title('Discriminator Loss Progression')
-    plt.savefig("GAN_plots\GAN_Discriminator_Loss.png")
+    plt.savefig(f"GAN\GAN_plots\GAN_Discriminator_Loss_{args.timestamp}.png")
     plt.show()
 
     plt.figure(figsize=(8, 5))
@@ -101,10 +103,10 @@ def plot_losses(train_losses_g, train_losses_d, val_losses_g, val_losses_d,
     plt.ylabel('Discriminator Score')
     plt.legend()
     plt.title('Discriminator Scores Over Training')
-    plt.savefig("GAN_plots\GAN_Discriminator_Scores.png")
+    plt.savefig(f"GAN\GAN_plots\GAN_Discriminator_Scores_{args.timestamp}.png")
     plt.show()
 
-def train(test_loader,val_loader, args, G, M, D):
+def train(train_loader,val_loader, args, G, M, D):
     lossfn = LossCompute(G, D, M,  args)
     optimizer_G = torch.optim.Adam(G.parameters(), lr=args.lr)
     optimizer_D = torch.optim.Adam(D.parameters(), lr=args.lr)
@@ -127,12 +129,13 @@ def train(test_loader,val_loader, args, G, M, D):
     for i in range(args.epoch):
         G.train()
         D.train()
+        M.train()
         train_loss_g = 0
         train_loss_d = 0
         train_real_score = 0
         train_fake_score = 0
         num_batches = 0
-        for batch in test_loader:
+        for batch in train_loader:
             past = batch['past_traj']
             prediction = batch['group_net']
             selected = batch['selected_traj']
@@ -190,9 +193,10 @@ def train(test_loader,val_loader, args, G, M, D):
         train_scores_real.append(train_real_score / num_batches)
         train_scores_fake.append(train_fake_score / num_batches)
 
-        # **Validation Phase**
+        # Validation Phase
         G.eval()
         D.eval()
+        M.eval()
         val_loss_g = 0
         val_loss_d = 0
         val_real_score = 0
@@ -227,7 +231,7 @@ def train(test_loader,val_loader, args, G, M, D):
 
                 val_real_score += scores_real_mean.mean()
                 val_fake_score += scores_fake_mean.mean()
-                break
+
         # Store validation metrics
         val_losses_g.append(val_loss_g / num_batches)
         val_losses_d.append(val_loss_d / num_batches)
@@ -235,54 +239,115 @@ def train(test_loader,val_loader, args, G, M, D):
         val_scores_fake.append(val_fake_score / num_batches)
 
         # Save model checkpoint every epoch
-        if (i + 1) % 1 == 0:
+        if (i + 1) % 10 == 0:
             saveModel(G, D, M, args, str(i + 1))
 
         print(
             f"Epoch [{i + 1}/{args.epoch}] - Train Loss G: {train_losses_g[-1]:.4f}, D: {train_losses_d[-1]:.4f} | Val Loss G: "
             f"{val_losses_g[-1]:.4f}, D: {val_losses_d[-1]:.4f}")
 
-    plot_losses(train_losses_g, train_losses_d, val_losses_g, val_losses_d, train_scores_real, train_scores_fake,val_scores_real, val_scores_fake)
+    plot_losses(args, train_losses_g, train_losses_d, val_losses_g, val_losses_d, train_scores_real, train_scores_fake,val_scores_real, val_scores_fake)
 
+def plot_score_list(score_list, args):
+    plt.figure(figsize=(8, 5))
+    plt.plot(score_list, marker='o', linestyle='-')
+    plt.xlabel("Iteration")
+    plt.ylabel("Score")
+    plt.title("Score vs Iteration")
+    plt.grid(True)
+    plt.savefig(f"GAN\score_list_{args.method}.png")
 
+def vis_predictions(future_traj):
+    N, T, _ = future_traj.shape
 
-def pred(val_loader, args, model, G):
-#
+    # Set up the figure and axis limits
+    fig, ax = plt.subplots(figsize=(8, 6))
+    x_min = future_traj[:, :, 0].min() - 1
+    x_max = future_traj[:, :, 0].max() + 1
+    y_min = future_traj[:, :, 1].min() - 1
+    y_max = future_traj[:, :, 1].max() + 1
+    ax.set_xlim(x_min, x_max)
+    ax.set_ylim(y_min, y_max)
+    ax.set_xlabel("X coordinate")
+    ax.set_ylabel("Y coordinate")
+    ax.set_title("Agent Trajectories Simulation")
+
+    # Determine the color for each agent: args.agent (or agents) will be red, others pink.
+    if isinstance(args.agent, (list, tuple)):
+        agent_indexes = args.agent
+    else:
+        agent_indexes = [args.agent]
+    colors = ['red' if i in agent_indexes else 'pink' for i in range(N)]
+
+    # Plot the target coordinates as an 'X'
+    target_x, target_y = args.target[0], args.target[1]
+    ax.scatter([target_x], [target_y], color='black', marker='x', s=100, label='Target')
+
+    # Create an empty scatter plot to update with agent positions.
+    scatter = ax.scatter([], [], s=80)
+
+    def init():
+        scatter.set_offsets([])
+        return scatter,
+
+    def update(frame):
+        # For the current frame, get positions of all agents
+        current_positions = future_traj[:, frame, :]  # shape: (N, 2)
+        scatter.set_offsets(current_positions)
+        scatter.set_color(colors)
+        ax.set_title(f"Simulation at time: {frame * 0.4:.1f}s / {T * 0.4:.1f}s")
+        return scatter,
+
+    # Create the animation (adjust interval and fps as needed)
+    ani = animation.FuncAnimation(fig, update, frames=range(T), init_func=init, blit=True, interval=10)
+    writer = PillowWriter(fps=10)
+    ani.save(f"GAN/simulation_{args.method}_{args.timestamp}.gif", writer=writer)
+    plt.close(fig)
+
+def pred(test_loader, args, model, G, D):
+
     G.eval()
+    D.eval()
+    model.eval()
     iter_num = 0
-    sample = val_loader.dataset[0][0].unsqueeze(0)
+    sample = test_loader.dataset[2000][0].unsqueeze(0).to(args.device) # B, N, T, 2
+    total_steps = args.length / 0.4
+    future_traj = np.array(sample[0])   #  8 agents, 5 time steps, 2 coords
+    score_list = []
 
-    for data in test_loader:
-        iter_num += 1
+    while len(future_traj[0]) - 5 < total_steps:
         with torch.no_grad():
-            prediction, distributions, H = model.inference(data)
-        prediction = prediction.detach().clone().requires_grad_()
-        H = H.detach().requires_grad_()
-        prediction = prediction * args.traj_scale
-        future_traj = np.array(data['future_traj']) * args.traj_scale  # B,N,T,2
+            prediction, H = model.inference_simulator(sample) #20, BN, T, 2
 
         if args.method == 'mean':
-
             agents_future_steps = torch.mean(prediction[:, :, :10, :], dim=0)
         elif args.method == 'first':
             agents_future_steps = prediction[0, :, :10, :]
 
         # print("agents_future_steps", agents_future_steps.shape)
-        # agents_future_steps = torch.tensor(agents_future_steps, dtype=torch.float32, device=args.device)
+
         final_positions = agents_future_steps.view(args.batch_size, 8, 10, 2)[:,args.agent, -1, :]  # Shape (B, 2)
+        mission = torch.ones(final_positions.shape[0], device=args.device) # Encourage generator to produce data that is getting closer to the mission
 
-        target_tensor = torch.tensor(args.target, dtype=torch.float32, device= args.device)
+        past_data = sample
+        pred_trajectories = G(prediction, H, past_data, mission,args.agent, args.target)
 
-        distances = torch.norm(final_positions - target_tensor, dim=-1)  # Shape (B,)
-        mission = (distances <= 2).float()
-
-        pred_trajectories = G(prediction, H, data["past_traj"], mission,args.agent, args.target)
-        agents_future_steps = agents_future_steps.view(args.batch_size, 8, 10, 2)
-        agents_future_steps_pred = agents_future_steps.clone()
-        agents_future_steps_pred[:, args.agent, :, :] = pred_trajectories
+        agents_future_steps_GEN = agents_future_steps.view(args.batch_size, 8, 10, 2)
+        agents_future_steps_GEN[:, args.agent, :, :] = pred_trajectories
 
 
-def load_dataset(args, model):
+        scores = D(prediction, H, past_data, args.agent, agents_future_steps_GEN)
+
+        # Adding the new trajectory and scores from the discriminator
+        future_traj = np.concatenate((future_traj, agents_future_steps_GEN), axis=1) #N, T, 2
+        score_list.append(scores)
+        sample = agents_future_steps_GEN[:, :, 5:, :] #taking the 5 last time steps for next prediction
+        iter_num += 1
+    plot_score_list(score_list, args)
+    vis_predictions(future_traj)
+
+
+def load_dataset(test_loader, args, model):
     DATASET_PATH = f"trajectory_dataset_{args.method}_{args.length}.pt"
 
     if os.path.exists(DATASET_PATH):
@@ -293,7 +358,7 @@ def load_dataset(args, model):
         traj_dataset = create_traj(test_loader, model, args.length, args, real_data=False)
         torch.save(traj_dataset, DATASET_PATH)
 
-    # **Split into train and validation sets**
+    # Split into train and validation sets
     total_size = len(traj_dataset)
     # print("total_size", total_size)
 
@@ -311,10 +376,7 @@ if __name__ == '__main__':
     """ setup """
     names = [x for x in args.model_names.split(',')]
 
-    torch.set_default_dtype(torch.float32)
-    device = torch.device('cuda', index=args.gpu) if args.gpu >= 0 and torch.cuda.is_available() else torch.device(
-        'cpu')
-    if torch.cuda.is_available(): torch.cuda.set_device(args.gpu)
+
 
     test_dset = FISHDataset(
         obs_len=args.past_length,
@@ -341,18 +403,32 @@ if __name__ == '__main__':
         checkpoint = torch.load(saved_path, map_location='cpu')
         training_args = checkpoint['model_cfg']
 
-        model = GroupNet(training_args, device)
-        model.set_device(device)
+        model = GroupNet(training_args, args.device)
+        model.set_device(args.device)
         model.eval()
         model.load_state_dict(checkpoint['model_dict'], strict=True)
 
-        train_dataset, val_dataset = load_dataset(args, model)
+        G = Generator(args.device, args.dim, args.mlp_dim, args.depth, args.heads, args.noise_dim, args.traj_len,
+                      args.dropout, 9).to(args.device)
 
-        G = Generator(args.dim, args.mlp_dim, args.depth, args.heads, args.noise_dim, args.traj_len, args.dropout, 9).to(
-            args.device)
+        M = Mission(args.device, args.dim, args.mlp_dim, args.depth, args.heads, args.dropout, 9).to(args.device)
+        D = Discrimiter(args.device, args.dim, args.mlp_dim, args.depth, args.heads, args.dropout, 9).to(args.device)
 
-        M = Mission(args.dim, args.mlp_dim, args.depth, args.heads,args.dropout, 9)
-        D = Discrimiter(args.dim, args.mlp_dim, args.depth, args.heads,args.dropout, 9)
-        train(train_dataset, val_dataset, args, G, M, D)
+        if args.mod == 'train':
+
+            # Creating new data sets based on the first initialization of the test data, then it is just generated with groupnet, therefore, there is no mixing of test-train,
+            #but for in case - I will start testing on differnt timestep
+            train_dataset, val_dataset = load_dataset(test_loader, args, model)
+            train(train_dataset, val_dataset, args, G, M, D)
+
+        else:
+
+
+            G_path = f"G_{args.GAN_models}.pth"
+            D_path = f"D_{args.GAN_models}.pth"
+            G.load_state_dict(torch.load(G_path))
+            D.load_state_dict(torch.load(D_path))
+
+            pred(test_loader, args, model, G, D)
 
 

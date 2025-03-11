@@ -33,7 +33,6 @@ class LossCompute:
         agents_future_steps_pred = agents_future_steps.clone()
         agents_future_steps_pred[:, agent, :, :] = pred_trajectories
 
-        print("gen loos", agents_future_steps_pred.shape)
 
         scores_fake = self.netD(prediction, H , data,agent,agents_future_steps_pred)
         discriminator_loss = self.gan_g_loss(scores_fake)

@@ -369,5 +369,5 @@ import numpy as np
 # print(class_labels_expanded)
 
 
-data = pd.read_csv("xgb_training_data.csv")
+data = pd.read_csv("XGB/xgb_training_data.csv")
 print(data[0])

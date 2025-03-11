@@ -2,18 +2,15 @@ import numpy as np
 import argparse
 import os
 import sys
-import subprocess
-import shutil
 import random
 sys.path.append(os.getcwd())
 import torch
 from data.dataloader_fish import FISHDataset, seq_collate
-from data.dataloader_nba import NBADataset
 from model.GroupNet_nba import GroupNet
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 from torch.nn import functional as F
-from XGB import run_xgb
+from XGB.XGB import run_xgb
 import pandas as pd
 from Simulator import visualize_simulation
 

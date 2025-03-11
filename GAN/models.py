@@ -10,20 +10,20 @@ from torch.nn import functional as F
 
 class PositionalEncoding(nn.Module):
 
-    def __init__(self, e_dim, dropout=0.1, max_len=512):
+    def __init__(self, e_dim,device, dropout=0.1, max_len=512):
         super().__init__()
         self.dropout = nn.Dropout(p=dropout)
-        pe = torch.zeros(max_len, e_dim).float() #512, 32
-        position = torch.arange(0, max_len).unsqueeze(1) #This creates a column vector [0, 1, 2, ..., 511] of shape (512, 1).
+        pe = torch.zeros(max_len, e_dim).float().to(device) #512, 32
+        position = torch.arange(0, max_len).unsqueeze(1).to(device) #This creates a column vector [0, 1, 2, ..., 511] of shape (512, 1).
 
         ## Shape: (16,)
-        div_term = 10000.0 ** (torch.arange(0., e_dim, 2.) / e_dim) #torch.arange(0., e_dim, 2.) gives [0, 2, 4, ..., 30] → 16 values. The division e_dim=32 ensures different frequencies across dimensions
+        div_term = 10000.0 ** (torch.arange(0., e_dim, 2.) / e_dim).to(device) #torch.arange(0., e_dim, 2.) gives [0, 2, 4, ..., 30] → 16 values. The division e_dim=32 ensures different frequencies across dimensions
 
         # Calculate sin for even-numbered digits, and calculate cos for odd-numbered digits.
-        pe[:, 0::2] = torch.sin(position / div_term) #Even indices (0, 2, 4, ..., 30) are assigned sine values
-        pe[:, 1::2] = torch.cos(position / div_term) #Odd indices (1, 3, 5, ..., 31) are assigned cosine values
+        pe[:, 0::2] = torch.sin(position / div_term).to(device) #Even indices (0, 2, 4, ..., 30) are assigned sine values
+        pe[:, 1::2] = torch.cos(position / div_term).to(device) #Odd indices (1, 3, 5, ..., 31) are assigned cosine values
 
-        pe = pe.unsqueeze(0).unsqueeze(0) ## Shape: (1, 1, 512, 32)
+        pe = pe.unsqueeze(0).unsqueeze(0).to(device) ## Shape: (1, 1, 512, 32)
         # self.pe = pe
         self.register_buffer('pe', pe) #ensures pe is part of the model but doesn't get updated
 
@@ -34,7 +34,7 @@ class PositionalEncoding(nn.Module):
 
 
 class Generator(nn.Module):
-    def __init__(self, dim, mlp_dim, depth, heads, noise_dim, traj_len, dropout, num_edges):
+    def __init__(self, device, dim, mlp_dim, depth, heads, noise_dim, traj_len, dropout, num_edges):
         super(Generator, self).__init__()
         self.cat_pos_to_dim = nn.Sequential(
             nn.Linear(2, dim),
@@ -59,7 +59,7 @@ class Generator(nn.Module):
             nn.ReLU()
         )
 
-        self.pos_encoder = PositionalEncoding(dim)
+        self.pos_encoder = PositionalEncoding(dim,device)
         self.noise_dim = noise_dim
 
         self.edge_embedding = nn.Sequential(
@@ -196,7 +196,7 @@ class Generator(nn.Module):
 
 
 class Mission(nn.Module):
-    def __init__(self, dim, mlp_dim, depth, heads, dropout, num_edges):
+    def __init__(self, device, dim, mlp_dim, depth, heads, dropout, num_edges):
         super(Mission, self).__init__()
         self.posandspeed_to_dim = nn.Sequential(
             nn.Linear(4, dim),
@@ -270,7 +270,7 @@ class Mission(nn.Module):
 
 
 class Discrimiter(nn.Module):
-    def __init__(self, dim, mlp_dim, depth, heads, dropout, num_edges):
+    def __init__(self, device,dim, mlp_dim, depth, heads, dropout, num_edges):
         super(Discrimiter, self).__init__()
         self.cat_pos_to_dim = nn.Sequential(
             nn.Linear(2, dim),
@@ -288,7 +288,7 @@ class Discrimiter(nn.Module):
         self.space_encoder = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(d_model=dim, dim_feedforward=mlp_dim, nhead=heads,
                                        dropout=dropout), num_layers=depth)  # Spatial sequence feature extraction
-        self.pos_encoder = PositionalEncoding(dim)
+        self.pos_encoder = PositionalEncoding(dim, device)
         self.hidden_to_dim = nn.Sequential(
             nn.Linear(dim * 2, dim),
             nn.ReLU()
