@@ -239,7 +239,7 @@ def train(train_loader,val_loader, args, G, M, D):
         val_scores_fake.append(val_fake_score / num_batches)
 
         # Save model checkpoint every epoch
-        if (i + 1) % 10 == 0:
+        if (i + 1) % args.save_every == 0:
             saveModel(G, D, M, args, str(i + 1))
 
         print(
@@ -298,7 +298,6 @@ def vis_predictions(future_traj):
         ax.set_title(f"Simulation at time: {frame * 0.4:.1f}s / {T * 0.4:.1f}s")
         return scatter,
 
-    # Create the animation (adjust interval and fps as needed)
     ani = animation.FuncAnimation(fig, update, frames=range(T), init_func=init, blit=True, interval=10)
     writer = PillowWriter(fps=10)
     ani.save(f"GAN/simulation_{args.method}_{args.timestamp}.gif", writer=writer)
@@ -312,7 +311,7 @@ def pred(test_loader, args, model, G, D):
     iter_num = 0
     sample = test_loader.dataset[2000][0].unsqueeze(0).to(args.device) # B, N, T, 2
     total_steps = args.length / 0.4
-    future_traj = np.array(sample[0])   #  8 agents, 5 time steps, 2 coords
+    future_traj = np.array(sample[0].detach().cpu().numpy())   #  8 agents, 5 time steps, 2 coords
     score_list = []
 
     while len(future_traj[0]) - 5 < total_steps:
@@ -326,21 +325,21 @@ def pred(test_loader, args, model, G, D):
 
         # print("agents_future_steps", agents_future_steps.shape)
 
-        final_positions = agents_future_steps.view(args.batch_size, 8, 10, 2)[:,args.agent, -1, :]  # Shape (B, 2)
+        final_positions = agents_future_steps.view(1, 8, 10, 2)[:,args.agent, -1, :]  # Shape (B, 2)
         mission = torch.ones(final_positions.shape[0], device=args.device) # Encourage generator to produce data that is getting closer to the mission
 
         past_data = sample
         pred_trajectories = G(prediction, H, past_data, mission,args.agent, args.target)
 
-        agents_future_steps_GEN = agents_future_steps.view(args.batch_size, 8, 10, 2)
+        agents_future_steps_GEN = agents_future_steps.view(1, 8, 10, 2)
         agents_future_steps_GEN[:, args.agent, :, :] = pred_trajectories
 
 
         scores = D(prediction, H, past_data, args.agent, agents_future_steps_GEN)
 
         # Adding the new trajectory and scores from the discriminator
-        future_traj = np.concatenate((future_traj, agents_future_steps_GEN), axis=1) #N, T, 2
-        score_list.append(scores)
+        future_traj = np.concatenate((future_traj, agents_future_steps_GEN.squeeze(0).detach().cpu().numpy()), axis=1) #N, T, 2
+        score_list.append(scores.mean(dim=(1, 2)).detach().cpu().numpy())
         sample = agents_future_steps_GEN[:, :, 5:, :] #taking the 5 last time steps for next prediction
         iter_num += 1
     plot_score_list(score_list, args)
@@ -414,7 +413,7 @@ if __name__ == '__main__':
         M = Mission(args.device, args.dim, args.mlp_dim, args.depth, args.heads, args.dropout, 9).to(args.device)
         D = Discrimiter(args.device, args.dim, args.mlp_dim, args.depth, args.heads, args.dropout, 9).to(args.device)
 
-        if args.mod == 'train':
+        if args.mode == 'train':
 
             # Creating new data sets based on the first initialization of the test data, then it is just generated with groupnet, therefore, there is no mixing of test-train,
             #but for in case - I will start testing on differnt timestep
@@ -424,8 +423,8 @@ if __name__ == '__main__':
         else:
 
 
-            G_path = f"G_{args.GAN_models}.pth"
-            D_path = f"D_{args.GAN_models}.pth"
+            G_path = f"{args.GAN_models}/G_raw_1.pth"
+            D_path = f"{args.GAN_models}/D_raw_1.pth"
             G.load_state_dict(torch.load(G_path))
             D.load_state_dict(torch.load(D_path))
 

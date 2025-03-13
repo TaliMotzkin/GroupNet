@@ -253,12 +253,12 @@ class PastEncoder(nn.Module):
         B = x.shape[0]
         N = x.shape[1]
         category = torch.zeros(N, 3).type_as(x)
-        category[0:4, 0] = 1  # todo
-        category[4:7, 1] = 1
-        category[7, 2] = 1
-        # category[0:5, 0] = 1
-        # category[5:10, 1] = 1
-        # category[10, 2] = 1
+        # category[0:4, 0] = 1  # todo
+        # category[4:7, 1] = 1
+        # category[7, 2] = 1
+        category[0:5, 0] = 1
+        category[5:10, 1] = 1
+        category[10, 2] = 1
         category = category.repeat(B, 1, 1)
         x = torch.cat((x, category), dim=-1)
         return x
@@ -380,19 +380,19 @@ class FutureEncoder(nn.Module):
         B = x.shape[0]
         N = x.shape[1]
         category = torch.zeros(N, 3).type_as(x)
-        category[0:4, 0] = 1  # todo changed here the categories by players
-        category[4:7, 1] = 1
-        category[7, 2] = 1
-        # category[0:5, 0] = 1
-        # category[5:10, 1] = 1
-        # category[10, 2] = 1
+        # category[0:4, 0] = 1  # todo changed here the categories by players
+        # category[4:7, 1] = 1
+        # category[7, 2] = 1
+        category[0:5, 0] = 1
+        category[5:10, 1] = 1
+        category[10, 2] = 1
         category = category.repeat(B, 1, 1)
         x = torch.cat((x, category), dim=-1)
         return x
 
     def forward(self, inputs, batch_size, agent_num, past_feature):
         length = inputs.shape[1]
-        agent_num = 8  # todo watch for fish number - make dynamic with different datasets?
+        agent_num = 11  # todo watch for fish number - make dynamic with different datasets?
         tf_in = self.input_fc(inputs).view(batch_size * agent_num, length, self.model_dim)
 
         tf_in_pos = self.pos_encoder(tf_in, num_a=batch_size * agent_num)
@@ -586,7 +586,7 @@ class GroupNet(nn.Module):
         self.future_encoder = FutureEncoder(args)
         self.decoder = Decoder(args)
         self.param_annealers = nn.ModuleList()
-        self.final_model = TrajectoryClassifier(args.future_length, 2, self.args.hidden_dim, self.args.sample_k)
+        # self.final_model = TrajectoryClassifier(args.future_length, 2, self.args.hidden_dim, self.args.sample_k)
         self.criterion = nn.CrossEntropyLoss()
 
     def set_device(self, device):
@@ -758,23 +758,25 @@ class GroupNet(nn.Module):
         diverse_pred_traj, _ = self.decoder(past_feature_repeat, pz_sampled, batch_size, agent_num, past_traj,
                                             cur_location, sample_num=20, mode='inference')
 
-        outputs = self.final_model(diverse_pred_traj)
+        # outputs = self.final_model(diverse_pred_traj)
         # print("diverse_pred_traj main ", diverse_pred_traj.shape) #640,20,10,2 =>32*20, 20, 10, 2
         loss_diverse = self.calculate_loss_diverse(diverse_pred_traj, future_traj, batch_size)  # future - 32*20, T, 2
 
-        loss_true = self.calculate_softmax_loss(diverse_pred_traj, future_traj, outputs, False, False, False)
+        # loss_true = self.calculate_softmax_loss(diverse_pred_traj, future_traj, outputs, False, False, False)
 
-        target_expanded = future_traj.unsqueeze(1).expand_as(diverse_pred_traj)  # [B*N, S, T, 2]
-        diff = diverse_pred_traj - target_expanded  # Difference
-        dist_squared = diff.pow(2).sum(dim=-1).sum(dim=-1)  # Sum squared differences across T and 2 dimensions
-        soft_targets = F.softmax(-dist_squared, dim=1)
-        _, closest_idx = dist_squared.min(dim=1)
-        true_indices = torch.zeros_like(outputs).scatter_(1, closest_idx.unsqueeze(1), 1)
-        true_indices = true_indices.reshape(batch_size, agent_num, sample_num)
+        # target_expanded = future_traj.unsqueeze(1).expand_as(diverse_pred_traj)  # [B*N, S, T, 2]
+        # diff = diverse_pred_traj - target_expanded  # Difference
+        # dist_squared = diff.pow(2).sum(dim=-1).sum(dim=-1)  # Sum squared differences across T and 2 dimensions
+        # soft_targets = F.softmax(-dist_squared, dim=1)
+        # _, closest_idx = dist_squared.min(dim=1)
+        # true_indices = torch.zeros_like(outputs).scatter_(1, closest_idx.unsqueeze(1), 1)
+        # true_indices = true_indices.reshape(batch_size, agent_num, sample_num)
 
-        total_loss = loss_pred + loss_recover + loss_kl + loss_diverse + loss_true
+        # total_loss = loss_pred + loss_recover + loss_kl + loss_diverse + loss_true
+        total_loss = loss_pred + loss_recover + loss_kl + loss_diverse
 
-        return total_loss, loss_pred.item(), loss_recover.item(), loss_kl.item(), loss_diverse.item(), loss_true.item(), outputs, diverse_pred_traj, soft_targets, true_indices
+        # return total_loss, loss_pred.item(), loss_recover.item(), loss_kl.item(), loss_diverse.item(), loss_true.item(), outputs, diverse_pred_traj, soft_targets, true_indices
+        return total_loss, loss_pred.item(), loss_recover.item(), loss_kl.item(), loss_diverse.item(),  diverse_pred_traj
 
     def step_annealer(self):
         for anl in self.param_annealers:
@@ -819,9 +821,11 @@ class GroupNet(nn.Module):
         diverse_pred_traj, _ = self.decoder(past_feature_repeat, z, batch_size, agent_num, past_traj, cur_location,
                                             sample_num=self.args.sample_k, mode='inference')  # Z in the decodng
 
-        outputs_softmax = self.final_model(diverse_pred_traj)
+        # outputs_softmax = self.final_model(diverse_pred_traj)
         diverse_pred_traj = diverse_pred_traj.permute(1, 0, 2, 3)
-        return diverse_pred_traj, outputs_softmax, H
+        # return diverse_pred_traj, outputs_softmax, H
+
+        return diverse_pred_traj, H
 
     def inference_simulator(self, data):
         device = self.device

@@ -43,7 +43,28 @@ class LossCompute:
 
         return self.l2_weight * l2_loss_sum + discriminator_loss + col_loss, l2_loss_sum.item(), discriminator_loss.item(), col_loss.item()
 
+    def compute_generator_loss_real(self, prediction, H , past, future_traj):
+        l2=[]
+        for i in range(5):
+            #agents - (B*N,T,2)
+            pred_trajectories = self.netG(prediction, H , past)
+            future_traj = future_traj.view(pred_trajectories.shape[0], 10, 2)
+            loss_l2 =  self.l2_loss(pred_trajectories,future_traj,'')
+            l2.append(loss_l2)
 
+
+        #Helps avoid "mode collapse" by allowing multiple solutions.
+        l2=torch.stack(l2,dim=-1)
+        l2=torch.min(l2,dim=-1)[0]
+        l2_loss_sum = l2.mean()
+
+
+        scores_fake = self.netD(prediction, H ,past, pred_trajectories)
+        discriminator_loss = self.gan_g_loss(scores_fake)
+
+
+
+        return self.l2_weight * l2_loss_sum + discriminator_loss , l2_loss_sum.item(), discriminator_loss.item()
 
     def compute_discriminator_loss(self,prediction, H , data, mission , agent,  target, agents_future_steps ):
         pred_trajectories = self.netG(prediction, H , data, mission , agent,  target)
@@ -52,6 +73,18 @@ class LossCompute:
         agents_future_steps_pred[:,agent,:,: ] = pred_trajectories
         scores_fake = self.netD(prediction, H , data,agent,agents_future_steps_pred)
         scores_real = self.netD(prediction, H , data,agent, agents_future_steps)
+        # print("scores_fake", scores_fake.shape)
+        # print("scores_real", scores_real)
+        loss_real, loss_fake = self.gan_d_loss(scores_fake, scores_real)  # BCEloss
+        return loss_real + loss_fake , loss_real.item(), loss_fake.item(), scores_fake, scores_real
+
+
+    def compute_discriminator_loss_real(self,prediction, H , past ,future_traj):
+        pred_trajectories = self.netG(prediction, H , past)
+
+        scores_fake = self.netD(prediction, H ,past, pred_trajectories)
+        future_traj = future_traj.view(future_traj.shape[0]* future_traj.shape[1], 10, 2)
+        scores_real = self.netD(prediction, H , past, future_traj)
         # print("scores_fake", scores_fake.shape)
         # print("scores_real", scores_real)
         loss_real, loss_fake = self.gan_d_loss(scores_fake, scores_real)  # BCEloss

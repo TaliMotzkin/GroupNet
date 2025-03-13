@@ -15,7 +15,7 @@ def parse_args():
     parser.add_argument("--noise_dim", type=int, default=64)
     parser.add_argument("--dropout", type=float, default=0.2)
     parser.add_argument("--out_dir", dest="out_dir", type=str, default="./out/")
-    parser.add_argument("--model_dir", dest="model_dir", type=str, default="./GAN_saved_model/")
+    parser.add_argument("--model_dir", dest="model_dir", type=str, default="GAN/GAN_saved_model/")
     parser.add_argument("--dataset", dest="dataset", type=str, default="raw")
     parser.add_argument("--G_dict", dest="G_dict", type=str, default="")
     parser.add_argument("--C_dict", dest="C_dict", type=str, default="")
@@ -31,7 +31,7 @@ def parse_args():
     parser.add_argument('--seed', type=int, default=0)
 
     parser.add_argument('--model_names', default=None)
-    parser.add_argument('--model_save_dir', default='saved_models/fish_overlap')
+    parser.add_argument('--model_save_dir', default='saved_models/nba')
     parser.add_argument('--vis', action='store_true', default=False)
     parser.add_argument('--traj_scale', type=int, default=1)
     parser.add_argument('--sample_k', type=int, default=20)
@@ -44,6 +44,7 @@ def parse_args():
     parser.add_argument('--length',  default=6000)
     parser.add_argument('--mode', type=str, default="train")
     parser.add_argument('--GAN_models', type=str, default="")
+    parser.add_argument('--save_every', type=int, default=10)
 
     args = parser.parse_args()
     args.device = "cuda" if torch.cuda.is_available() else "cpu"

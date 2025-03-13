@@ -30,6 +30,29 @@ class TrajectoryDataset(Dataset):
             'H_list': self.H_list[idx]
         }
 
+class TrajectoryDatasetReal(Dataset):
+    def __init__(self, past_traj,future_traj, group_net, H_list):
+        """
+        past_traj: Tensor (Total_samples, N, 5, 2)
+        group_net: Tensor (Total_samples, N, 10, 2, 20) - future trajectories per agent
+        H_list: Tensor (Total_samples, edges, N) - H matrix from model
+        """
+        self.past_traj = past_traj
+        self.group_net = group_net
+        self.H_list = H_list
+        self.future_traj = future_traj
+
+    def __len__(self):
+        return self.past_traj.shape[0]
+
+    def __getitem__(self, idx):
+        return {
+            'past_traj': self.past_traj[idx],
+            'group_net': self.group_net[idx],
+            'H_list': self.H_list[idx],
+            'future_traj': self.future_traj[idx]
+        }
+
 
 def seq_collate(data):
 

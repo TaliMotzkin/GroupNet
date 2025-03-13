@@ -71,7 +71,7 @@ class MS_HGNN_oridinary(nn.Module):
 
         hdim_extend = 64
         self.hdim_extend = hdim_extend
-        self.edge_types = 5 #todo make sure if i want to keep it 6 (5 changed) as it represents the factor number - some features related to the 400 edges?..
+        self.edge_types = 6 #todo make sure if i want to keep it 6 (5 changed) as it represents the factor number - some features related to the 400 edges?..
         self.nmp_mlp_start = MLP_dict_softmax(input_dim = hdim_extend, output_dim = h_dim, hidden_size=(128,),edge_types=self.edge_types)
         self.nmp_mlps = self.make_nmp_mlp()
         self.nmp_mlp_end = MLP(input_dim = h_dim*2, output_dim = bottleneck_dim, hidden_size=(128,))
@@ -271,7 +271,7 @@ class MS_HGNN_hyper(nn.Module):
     """Pooling module as proposed in our paper"""
     def __init__(
         self, embedding_dim=64, h_dim=64, mlp_dim=1024, bottleneck_dim=1024,
-        activation='relu', batch_norm=True, dropout=0.0, nmp_layers=4, scale=2, vis=False, actor_number=8
+        activation='relu', batch_norm=True, dropout=0.0, nmp_layers=4, scale=2, vis=False, actor_number=11
     ): #todo changed here number of players
         super(MS_HGNN_hyper, self).__init__()
 
@@ -291,7 +291,7 @@ class MS_HGNN_hyper(nn.Module):
         self.spatial_transform = nn.Linear(h_dim,h_dim)
         hdim_extend = 64
         self.hdim_extend = hdim_extend
-        self.edge_types = 5 #todo make sure we want this size 10->5
+        self.edge_types = 10 #todo make sure we want this size 10->5
 
         self.nmp_mlp_start = MLP_dict_softmax(input_dim=hdim_extend, output_dim=h_dim, hidden_size=(128,),edge_types=self.edge_types)
         self.nmp_mlps = self.make_nmp_mlp()
